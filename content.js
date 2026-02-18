@@ -97,83 +97,33 @@ function showToast(message, type = "success", duration = 4000) {
   }, duration);
 }
 
-// ── Job Search Page: Auto-Detect & Mark ──────────────────────────────────────
+// ── Job Search Page: Auto-Hide Applied Jobs ──────────────────────────────────
 
 let appliedJobsCache = {};
-let hideAppliedMode = false;
 
 // 1. Sync data from storage
 function updateCache() {
-  chrome.storage.local.get(["appliedJobs", "hideApplied"], (result) => {
+  chrome.storage.local.get("appliedJobs", (result) => {
     appliedJobsCache = result.appliedJobs || {};
-    hideAppliedMode = result.hideApplied === true;
 
     // Reset checked flags so ALL cards get re-evaluated against new data
     document.querySelectorAll('[data-nli-checked]').forEach(el => {
-      // Restore visibility and remove old marks before re-scan
       el.style.display = "";
-      el.style.border = "";
-      el.style.background = "";
-      el.removeAttribute("title");
-      const badge = el.querySelector('.nli-badge');
-      if (badge) badge.remove();
       delete el.dataset.nliChecked;
     });
 
-    scanAndMarkJobs(); // Re-scan whenever data changes
+    hideAppliedJobs();
   });
 }
 updateCache();
 chrome.storage.onChanged.addListener(updateCache);
 
-// 2. Tooltip Logic
-let tooltipEl = null;
-
-function showTooltip(target, jobData) {
-  if (!jobData || !jobData.firstSeen) return;
-  if (!tooltipEl) {
-    tooltipEl = document.createElement("div");
-    tooltipEl.style.cssText = `
-      position: absolute;
-      z-index: 100000;
-      background: #004182;
-      color: white;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 500;
-      pointer-events: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      white-space: nowrap;
-    `;
-    document.body.appendChild(tooltipEl);
-  }
-
-  const date = new Date(jobData.firstSeen).toLocaleDateString("en-IN", {
-    day: "numeric", month: "short"
-  });
-
-  tooltipEl.innerHTML = `✅ Applied/Searched on <b>${date}</b>`;
-
-  const rect = target.getBoundingClientRect();
-  tooltipEl.style.top = `${window.scrollY + rect.top - 40}px`;
-  tooltipEl.style.left = `${window.scrollX + rect.left + 20}px`;
-  tooltipEl.style.display = "block";
-}
-
-function hideTooltip() {
-  if (tooltipEl) tooltipEl.style.display = "none";
-}
-
-// 3. Mark or Hide applied jobs
-function scanAndMarkJobs() {
-  // Selectors for job cards on search result pages
-  // Handles typical "srp-jobtuple-wrapper" and other common Naukri containers
+// 2. Hide applied job cards
+function hideAppliedJobs() {
   const cards = document.querySelectorAll('.srp-jobtuple-wrapper, [class*="jobTuple"], .list');
 
   cards.forEach(card => {
-    // Avoid marking the same card repeatedly if status hasn't changed
-    if (card.dataset.nliChecked === "true" && !card.dataset.nliNeedsUpdate) return;
+    if (card.dataset.nliChecked === "true") return;
 
     // Extract Title
     const titleEl = card.querySelector('.title, a[title]');
@@ -186,57 +136,18 @@ function scanAndMarkJobs() {
     const company = companyEl.innerText.trim();
     const key = makeKey(company, position);
 
-    // If matches history
-    const jobData = appliedJobsCache[key];
-    if (jobData) {
-
-      // ── HIDE MODE: completely remove from view ──
-      if (hideAppliedMode) {
-        card.style.display = "none";
-      }
-      // ── MARK MODE: green badge + border ──
-      else {
-        card.style.border = "2px solid #34d399";
-        card.style.background = "rgba(52, 211, 153, 0.05)";
-        card.setAttribute("title", `✅ Already applied on ${new Date(jobData.firstSeen).toLocaleDateString()}`);
-
-        // Add badge
-        if (!card.querySelector('.nli-badge')) {
-          const badge = document.createElement("div");
-          badge.className = "nli-badge";
-          badge.innerText = "✅ APPLIED";
-          badge.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: #059669;
-            color: white;
-            font-size: 10px;
-            font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 4px;
-            z-index: 10;
-          `;
-          if (getComputedStyle(card).position === 'static') {
-            card.style.position = 'relative';
-          }
-          card.appendChild(badge);
-        }
-
-        // Tooltip
-        card.addEventListener("mouseenter", () => showTooltip(card, jobData));
-        card.addEventListener("mouseleave", hideTooltip);
-      }
+    // If matches history → hide it
+    if (appliedJobsCache[key]) {
+      card.style.display = "none";
     }
 
     card.dataset.nliChecked = "true";
   });
 }
 
-// 4. Observer: Watch for new jobs loading (Infinite Scroll)
-const observer = new MutationObserver((mutations) => {
-  // Simple throttle/debounce could be added if page is very heavy
-  scanAndMarkJobs();
+// 3. Observer: Watch for new jobs loading (Infinite Scroll)
+const observer = new MutationObserver(() => {
+  hideAppliedJobs();
 });
 
 observer.observe(document.body, { childList: true, subtree: true });

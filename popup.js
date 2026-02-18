@@ -39,41 +39,6 @@ Object.keys(checkboxes).forEach((key) => {
   });
 });
 
-// ── Hide/Mark Toggle ──────────────────────────────────────────────────────────
-
-const hideToggle = document.getElementById("chk-hideApplied");
-const toggleLabel = document.getElementById("toggleLabel");
-const toggleDesc = document.getElementById("toggleDesc");
-const toggleModeText = document.getElementById("toggleModeText");
-
-function updateToggleUI(isHide) {
-  if (isHide) {
-    toggleLabel.textContent = "🚫 Hide applied jobs";
-    toggleDesc.textContent = "Completely hides applied cards from results";
-    toggleModeText.textContent = "HIDE MODE";
-    toggleModeText.className = "toggle-mode-text hide";
-  } else {
-    toggleLabel.textContent = "✅ Mark applied jobs";
-    toggleDesc.textContent = "Shows green badge on applied cards";
-    toggleModeText.textContent = "MARK MODE";
-    toggleModeText.className = "toggle-mode-text mark";
-  }
-}
-
-// Load saved preference
-chrome.storage.local.get(["hideApplied"], (result) => {
-  const isHide = result.hideApplied === true;
-  hideToggle.checked = isHide;
-  updateToggleUI(isHide);
-});
-
-// Save on change
-hideToggle.addEventListener("change", () => {
-  const isHide = hideToggle.checked;
-  chrome.storage.local.set({ hideApplied: isHide });
-  updateToggleUI(isHide);
-});
-
 // ── History ───────────────────────────────────────────────────────────────────
 
 loadHistory();
