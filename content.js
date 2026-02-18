@@ -1,7 +1,15 @@
 // content.js — Runs on all naukri.com pages
 console.log("[NaukriLinkedIn] ✅ Content script loaded on:", window.location.href);
 
-// ── Extractors ───────────────────────────────────────────────────────────────
+// ── Shared Helpers ──────────────────────────────────────────────────────────
+
+function makeKey(company, position) {
+  const c = (company || "").toLowerCase().trim();
+  const p = (position || "").toLowerCase().trim();
+  return `${c}||${p}`;
+}
+
+// ── Extractors (Job Details Page) ───────────────────────────────────────────
 
 function extractCompanyName() {
   const selectors = [
@@ -44,7 +52,7 @@ function showToast(message, type = "success", duration = 4000) {
   if (existing) existing.remove();
 
   const colors = { success: "#0A66C2", error: "#dc2626", warning: "#b45309" };
-  const icons  = { success: "🔗", error: "⚠️", warning: "🚨" };
+  const icons = { success: "🔗", error: "⚠️", warning: "🚨" };
 
   const toast = document.createElement("div");
   toast.id = "nli-toast";
@@ -89,10 +97,132 @@ function showToast(message, type = "success", duration = 4000) {
   }, duration);
 }
 
-// ── Main action ───────────────────────────────────────────────────────────────
+// ── Job Search Page: Auto-Detect & Mark ──────────────────────────────────────
+
+let appliedJobsCache = {};
+
+// 1. Sync data from storage
+function updateCache() {
+  chrome.storage.local.get("appliedJobs", (result) => {
+    appliedJobsCache = result.appliedJobs || {};
+    scanAndMarkJobs(); // Re-scan whenever data changes
+  });
+}
+updateCache();
+chrome.storage.onChanged.addListener(updateCache);
+
+// 2. Tooltip Logic
+let tooltipEl = null;
+
+function showTooltip(target, jobData) {
+  if (!tooltipEl) {
+    tooltipEl = document.createElement("div");
+    tooltipEl.style.cssText = `
+      position: absolute;
+      z-index: 100000;
+      background: #004182;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      white-space: nowrap;
+    `;
+    document.body.appendChild(tooltipEl);
+  }
+
+  const date = new Date(jobData.firstSeen).toLocaleDateString("en-IN", {
+    day: "numeric", month: "short"
+  });
+
+  tooltipEl.innerHTML = `✅ Applied/Searched on <b>${date}</b>`;
+
+  const rect = target.getBoundingClientRect();
+  tooltipEl.style.top = `${window.scrollY + rect.top - 40}px`;
+  tooltipEl.style.left = `${window.scrollX + rect.left + 20}px`;
+  tooltipEl.style.display = "block";
+}
+
+function hideTooltip() {
+  if (tooltipEl) tooltipEl.style.display = "none";
+}
+
+// 3. Mark applied jobs visually
+function scanAndMarkJobs() {
+  // Selectors for job cards on search result pages
+  // Handles typical "srp-jobtuple-wrapper" and other common Naukri containers
+  const cards = document.querySelectorAll('.srp-jobtuple-wrapper, [class*="jobTuple"], .list');
+
+  cards.forEach(card => {
+    // Avoid marking the same card repeatedly if status hasn't changed
+    if (card.dataset.nliChecked === "true" && !card.dataset.nliNeedsUpdate) return;
+
+    // Extract Title
+    const titleEl = card.querySelector('.title, a[title]');
+    // Extract Company
+    const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+
+    if (!titleEl || !companyEl) return;
+
+    const position = titleEl.innerText.trim();
+    const company = companyEl.innerText.trim();
+    const key = makeKey(company, position);
+
+    // If matches history
+    if (appliedJobsCache[key]) {
+      // VISUAL: Add a border or background style
+      card.style.border = "2px solid #34d399"; // Green border
+      card.style.background = "rgba(52, 211, 153, 0.05)"; // Very light green tint
+      card.setAttribute("title", `✅ Already applied on ${new Date(appliedJobsCache[key].firstSeen).toLocaleDateString()}`); // Native tooltip
+
+      // VISUAL: Add a small badge
+      if (!card.querySelector('.nli-badge')) {
+        const badge = document.createElement("div");
+        badge.className = "nli-badge";
+        badge.innerText = "✅ APPLIED";
+        badge.style.cssText = `
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: #059669;
+          color: white;
+          font-size: 10px;
+          font-weight: bold;
+          padding: 2px 6px;
+          border-radius: 4px;
+          z-index: 10;
+        `;
+        // Ensure card has positioning context
+        if (getComputedStyle(card).position === 'static') {
+          card.style.position = 'relative';
+        }
+        card.appendChild(badge);
+      }
+
+      // HOVER: Add custom tooltip listener
+      card.addEventListener("mouseenter", () => showTooltip(card, appliedJobsCache[key]));
+      card.addEventListener("mouseleave", hideTooltip);
+    }
+
+    card.dataset.nliChecked = "true";
+  });
+}
+
+// 4. Observer: Watch for new jobs loading (Infinite Scroll)
+const observer = new MutationObserver((mutations) => {
+  // Simple throttle/debounce could be added if page is very heavy
+  scanAndMarkJobs();
+});
+
+observer.observe(document.body, { childList: true, subtree: true });
+
+
+// ── Main action (Job Details Page) ──────────────────────────────────────────
 
 function openLinkedIn() {
-  const company  = extractCompanyName();
+  const company = extractCompanyName();
   const position = extractJobPosition();
 
   console.log("[NaukriLinkedIn] Company:", company, "| Position:", position);
@@ -131,7 +261,7 @@ document.addEventListener("keydown", (e) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "getCompany") {
-    const company  = extractCompanyName();
+    const company = extractCompanyName();
     const position = extractJobPosition();
     sendResponse({ company, position });
   }
