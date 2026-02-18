@@ -105,6 +105,12 @@ let appliedJobsCache = {};
 function updateCache() {
   chrome.storage.local.get("appliedJobs", (result) => {
     appliedJobsCache = result.appliedJobs || {};
+
+    // Reset checked flags so ALL cards get re-evaluated against new data
+    document.querySelectorAll('[data-nli-checked]').forEach(el => {
+      delete el.dataset.nliChecked;
+    });
+
     scanAndMarkJobs(); // Re-scan whenever data changes
   });
 }
