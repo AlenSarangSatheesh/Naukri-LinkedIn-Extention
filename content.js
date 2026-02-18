@@ -121,6 +121,7 @@ chrome.storage.onChanged.addListener(updateCache);
 let tooltipEl = null;
 
 function showTooltip(target, jobData) {
+  if (!jobData || !jobData.firstSeen) return;
   if (!tooltipEl) {
     tooltipEl = document.createElement("div");
     tooltipEl.style.cssText = `
@@ -177,11 +178,12 @@ function scanAndMarkJobs() {
     const key = makeKey(company, position);
 
     // If matches history
-    if (appliedJobsCache[key]) {
+    const jobData = appliedJobsCache[key];
+    if (jobData) {
       // VISUAL: Add a border or background style
       card.style.border = "2px solid #34d399"; // Green border
       card.style.background = "rgba(52, 211, 153, 0.05)"; // Very light green tint
-      card.setAttribute("title", `✅ Already applied on ${new Date(appliedJobsCache[key].firstSeen).toLocaleDateString()}`); // Native tooltip
+      card.setAttribute("title", `✅ Already applied on ${new Date(jobData.firstSeen).toLocaleDateString()}`); // Native tooltip
 
       // VISUAL: Add a small badge
       if (!card.querySelector('.nli-badge')) {
@@ -207,8 +209,8 @@ function scanAndMarkJobs() {
         card.appendChild(badge);
       }
 
-      // HOVER: Add custom tooltip listener
-      card.addEventListener("mouseenter", () => showTooltip(card, appliedJobsCache[key]));
+      // HOVER: Add custom tooltip listener (capture jobData value now, not lazily)
+      card.addEventListener("mouseenter", () => showTooltip(card, jobData));
       card.addEventListener("mouseleave", hideTooltip);
     }
 
