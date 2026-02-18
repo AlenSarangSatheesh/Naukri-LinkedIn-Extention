@@ -100,14 +100,23 @@ function showToast(message, type = "success", duration = 4000) {
 // ── Job Search Page: Auto-Detect & Mark ──────────────────────────────────────
 
 let appliedJobsCache = {};
+let hideAppliedMode = false;
 
 // 1. Sync data from storage
 function updateCache() {
-  chrome.storage.local.get("appliedJobs", (result) => {
+  chrome.storage.local.get(["appliedJobs", "hideApplied"], (result) => {
     appliedJobsCache = result.appliedJobs || {};
+    hideAppliedMode = result.hideApplied === true;
 
     // Reset checked flags so ALL cards get re-evaluated against new data
     document.querySelectorAll('[data-nli-checked]').forEach(el => {
+      // Restore visibility and remove old marks before re-scan
+      el.style.display = "";
+      el.style.border = "";
+      el.style.background = "";
+      el.removeAttribute("title");
+      const badge = el.querySelector('.nli-badge');
+      if (badge) badge.remove();
       delete el.dataset.nliChecked;
     });
 
@@ -156,7 +165,7 @@ function hideTooltip() {
   if (tooltipEl) tooltipEl.style.display = "none";
 }
 
-// 3. Mark applied jobs visually
+// 3. Mark or Hide applied jobs
 function scanAndMarkJobs() {
   // Selectors for job cards on search result pages
   // Handles typical "srp-jobtuple-wrapper" and other common Naukri containers
@@ -180,38 +189,44 @@ function scanAndMarkJobs() {
     // If matches history
     const jobData = appliedJobsCache[key];
     if (jobData) {
-      // VISUAL: Add a border or background style
-      card.style.border = "2px solid #34d399"; // Green border
-      card.style.background = "rgba(52, 211, 153, 0.05)"; // Very light green tint
-      card.setAttribute("title", `✅ Already applied on ${new Date(jobData.firstSeen).toLocaleDateString()}`); // Native tooltip
 
-      // VISUAL: Add a small badge
-      if (!card.querySelector('.nli-badge')) {
-        const badge = document.createElement("div");
-        badge.className = "nli-badge";
-        badge.innerText = "✅ APPLIED";
-        badge.style.cssText = `
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          background: #059669;
-          color: white;
-          font-size: 10px;
-          font-weight: bold;
-          padding: 2px 6px;
-          border-radius: 4px;
-          z-index: 10;
-        `;
-        // Ensure card has positioning context
-        if (getComputedStyle(card).position === 'static') {
-          card.style.position = 'relative';
-        }
-        card.appendChild(badge);
+      // ── HIDE MODE: completely remove from view ──
+      if (hideAppliedMode) {
+        card.style.display = "none";
       }
+      // ── MARK MODE: green badge + border ──
+      else {
+        card.style.border = "2px solid #34d399";
+        card.style.background = "rgba(52, 211, 153, 0.05)";
+        card.setAttribute("title", `✅ Already applied on ${new Date(jobData.firstSeen).toLocaleDateString()}`);
 
-      // HOVER: Add custom tooltip listener (capture jobData value now, not lazily)
-      card.addEventListener("mouseenter", () => showTooltip(card, jobData));
-      card.addEventListener("mouseleave", hideTooltip);
+        // Add badge
+        if (!card.querySelector('.nli-badge')) {
+          const badge = document.createElement("div");
+          badge.className = "nli-badge";
+          badge.innerText = "✅ APPLIED";
+          badge.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #059669;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+            z-index: 10;
+          `;
+          if (getComputedStyle(card).position === 'static') {
+            card.style.position = 'relative';
+          }
+          card.appendChild(badge);
+        }
+
+        // Tooltip
+        card.addEventListener("mouseenter", () => showTooltip(card, jobData));
+        card.addEventListener("mouseleave", hideTooltip);
+      }
     }
 
     card.dataset.nliChecked = "true";
