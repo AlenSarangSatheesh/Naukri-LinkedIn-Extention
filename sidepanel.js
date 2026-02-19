@@ -20,6 +20,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     tab.classList.add("active");
     document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
     if (tab.dataset.tab === "history") loadHistory();
+    if (tab.dataset.tab === "hidden") loadHiddenJobs();
   });
 });
 
@@ -318,6 +319,56 @@ function loadHistory() {
         chrome.runtime.sendMessage({ action: "deleteEntry", company: job.company, position: job.position }, () => loadHistory());
       });
       historyList.appendChild(item);
+    });
+  });
+}
+
+// ── Hidden Jobs ──────────────────────────────────────────────────────────────
+const hiddenList = document.getElementById("hiddenList");
+const hiddenCount = document.getElementById("hidden-count");
+const refreshHiddenBtn = document.getElementById("refreshHiddenBtn");
+
+refreshHiddenBtn.addEventListener("click", loadHiddenJobs);
+
+const REASON_CLASSES = { Applied: "applied", Experience: "exp", Keywords: "keywords", Location: "location" };
+
+function loadHiddenJobs() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0] || !tabs[0].url || !/naukri\.com/.test(tabs[0].url)) {
+      hiddenCount.textContent = "—";
+      hiddenList.innerHTML = `<div class="empty-state"><div class="empty-icon">🌐</div><p>Open a Naukri search page<br>to see hidden jobs here.</p></div>`;
+      return;
+    }
+    chrome.tabs.sendMessage(tabs[0].id, { action: "getHiddenJobs" }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        hiddenCount.textContent = "—";
+        hiddenList.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>Could not reach the page.<br>Try refreshing the Naukri tab.</p></div>`;
+        return;
+      }
+      const jobs = response.hiddenJobs || [];
+      hiddenCount.textContent = `${jobs.length} hidden job${jobs.length !== 1 ? "s" : ""}`;
+      if (jobs.length === 0) {
+        hiddenList.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><p>No jobs are hidden right now.<br>All cards are visible.</p></div>`;
+        return;
+      }
+      hiddenList.innerHTML = "";
+      jobs.forEach(job => {
+        const item = document.createElement("div");
+        item.className = "hidden-item";
+        const metaParts = [];
+        if (job.exp) metaParts.push(`Exp: ${escHtml(job.exp)}`);
+        if (job.location) metaParts.push(`📍 ${escHtml(job.location)}`);
+        const badges = job.reasons.map(r =>
+          `<span class="reason-badge ${REASON_CLASSES[r] || ""}">${escHtml(r)}</span>`
+        ).join("");
+        item.innerHTML = `
+          <div class="hidden-item-title">${escHtml(job.title)}</div>
+          <div class="hidden-item-company">${escHtml(job.company)}</div>
+          ${metaParts.length ? `<div class="hidden-item-meta">${metaParts.join(" · ")}</div>` : ""}
+          <div class="hidden-item-reasons">${badges}</div>
+        `;
+        hiddenList.appendChild(item);
+      });
     });
   });
 }

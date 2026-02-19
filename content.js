@@ -130,14 +130,14 @@ function cardMatchesLocation(card, locations) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let appliedJobsCache  = {};
-let expFilterEnabled  = false;
-let expFilterMax      = 2;
-let kwFilterEnabled   = false;
-let kwFilterKeywords  = [];
-let locFilterEnabled  = false;
-let locFilterCities   = [];
-let storageReady      = false;
+let appliedJobsCache = {};
+let expFilterEnabled = false;
+let expFilterMax = 2;
+let kwFilterEnabled = false;
+let kwFilterKeywords = [];
+let locFilterEnabled = false;
+let locFilterCities = [];
+let storageReady = false;
 
 // ── Toast ────────────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ function showToast(message, type = "success", duration = 4000) {
   const existing = document.getElementById("nli-toast");
   if (existing) existing.remove();
   const colors = { success: "#0A66C2", error: "#dc2626", warning: "#b45309" };
-  const icons  = { success: "🔗", error: "⚠️", warning: "🚨" };
+  const icons = { success: "🔗", error: "⚠️", warning: "🚨" };
   const toast = document.createElement("div");
   toast.id = "nli-toast";
   toast.style.cssText = `position:fixed;bottom:30px;right:30px;z-index:999999;background:${colors[type]};color:white;padding:16px 20px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.3);display:flex;align-items:flex-start;gap:10px;max-width:380px;line-height:1.5;animation:nliIn .3s ease;cursor:pointer;`;
@@ -167,16 +167,16 @@ function fullReset() {
   ).forEach(el => {
     el.style.display = "";
     delete el.dataset.nliChecked;
-    delete el.dataset.nliExpChecked;  delete el.dataset.nliExpHidden;
-    delete el.dataset.nliKwChecked;   delete el.dataset.nliKwHidden;
-    delete el.dataset.nliLocChecked;  delete el.dataset.nliLocHidden;
+    delete el.dataset.nliExpChecked; delete el.dataset.nliExpHidden;
+    delete el.dataset.nliKwChecked; delete el.dataset.nliKwHidden;
+    delete el.dataset.nliLocChecked; delete el.dataset.nliLocHidden;
   });
 }
 
 // ── Is card hidden by application history? ───────────────────────────────────
 
 function isHistoryHidden(card) {
-  const titleEl   = card.querySelector('.title, a[title]');
+  const titleEl = card.querySelector('.title, a[title]');
   const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
   if (!titleEl || !companyEl) return false;
   return !!appliedJobsCache[makeKey(companyEl.innerText.trim(), titleEl.innerText.trim())];
@@ -189,7 +189,7 @@ function shouldShow(card) {
   return (
     !isHistoryHidden(card) &&
     !(card.dataset.nliExpHidden === "true") &&
-    !(card.dataset.nliKwHidden  === "true") &&
+    !(card.dataset.nliKwHidden === "true") &&
     !(card.dataset.nliLocHidden === "true")
   );
 }
@@ -228,7 +228,7 @@ function applyExpFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "expFilterStatus", hiddenCount }); } catch(e) {}
+  try { chrome.runtime.sendMessage({ action: "expFilterStatus", hiddenCount }); } catch (e) { }
 }
 
 // ── Filter: keyword ───────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ function applyKeywordFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "kwFilterStatus", hiddenCount }); } catch(e) {}
+  try { chrome.runtime.sendMessage({ action: "kwFilterStatus", hiddenCount }); } catch (e) { }
 }
 
 // ── Filter: location ──────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ function applyLocationFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "locFilterStatus", hiddenCount }); } catch(e) {}
+  try { chrome.runtime.sendMessage({ action: "locFilterStatus", hiddenCount }); } catch (e) { }
 }
 
 // ── Run all filters ───────────────────────────────────────────────────────────
@@ -292,15 +292,15 @@ function loadFromStorage(callback) {
 
     const ef = result.expFilter || { enabled: false, maxAllowed: 2 };
     expFilterEnabled = ef.enabled;
-    expFilterMax     = ef.maxAllowed;
+    expFilterMax = ef.maxAllowed;
 
     const kf = result.kwFilter || { enabled: false, keywords: [] };
-    kwFilterEnabled  = kf.enabled;
+    kwFilterEnabled = kf.enabled;
     kwFilterKeywords = kf.keywords || [];
 
     const lf = result.locFilter || { enabled: false, cities: [] };
     locFilterEnabled = lf.enabled;
-    locFilterCities  = lf.cities || [];
+    locFilterCities = lf.cities || [];
 
     storageReady = true;
     if (callback) callback();
@@ -343,7 +343,7 @@ function extractCompanyName() {
   for (const sel of selectors) {
     const el = document.querySelector(sel);
     if (el) {
-      const name = el.innerText?.trim() || el.getAttribute("title")?.replace(" Careers","").trim();
+      const name = el.innerText?.trim() || el.getAttribute("title")?.replace(" Careers", "").trim();
       if (name) return name;
     }
   }
@@ -365,12 +365,12 @@ function extractJobPosition() {
 // ── Main action ───────────────────────────────────────────────────────────────
 
 function openLinkedIn() {
-  const company  = extractCompanyName();
+  const company = extractCompanyName();
   const position = extractJobPosition();
   if (!company) { showToast("No company name found. Please open a specific job listing.", "error"); return; }
   chrome.runtime.sendMessage({ action: "checkAndOpen", company, position }, (response) => {
     if (response && response.alreadyApplied) {
-      showToast(`Already searched/applied!<br><b>${position||"This role"}</b> at <b>${company}</b><br><span style="font-weight:400;opacity:.9;font-size:12px">First seen: ${response.firstSeen}</span>`, "warning", 8000);
+      showToast(`Already searched/applied!<br><b>${position || "This role"}</b> at <b>${company}</b><br><span style="font-weight:400;opacity:.9;font-size:12px">First seen: ${response.firstSeen}</span>`, "warning", 8000);
     } else {
       showToast(`Searching LinkedIn for: <b>${company}</b>`, "success");
     }
@@ -389,10 +389,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.action === "triggerSearch") { openLinkedIn(); }
 
+  // Side panel requests list of hidden jobs
+  if (message.action === "getHiddenJobs") {
+    const hiddenJobs = [];
+    document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+      if (card.style.display !== "none") return;
+
+      const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+      const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+      const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "Unknown";
+      const company = companyEl ? companyEl.innerText.trim() : "Unknown";
+
+      const reasons = [];
+      if (isHistoryHidden(card)) reasons.push("Applied");
+      if (card.dataset.nliExpHidden === "true") reasons.push("Experience");
+      if (card.dataset.nliKwHidden === "true") reasons.push("Keywords");
+      if (card.dataset.nliLocHidden === "true") reasons.push("Location");
+
+      const exp = getCardMinExp(card);
+      const loc = getCardLocation(card);
+
+      hiddenJobs.push({
+        title,
+        company,
+        reasons,
+        exp: exp !== null ? exp + " yrs" : null,
+        location: loc || null,
+      });
+    });
+    sendResponse({ hiddenJobs });
+    return true;
+  }
+
   // Exp filter changed from side panel
   if (message.action === "expFilterChanged") {
     expFilterEnabled = message.enabled;
-    expFilterMax     = message.maxAllowed;
+    expFilterMax = message.maxAllowed;
     document.querySelectorAll('[data-nli-exp-checked]').forEach(el => {
       delete el.dataset.nliExpChecked; delete el.dataset.nliExpHidden;
       syncDisplay(el);
@@ -402,7 +434,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Keyword filter changed
   if (message.action === "kwFilterChanged") {
-    kwFilterEnabled  = message.enabled;
+    kwFilterEnabled = message.enabled;
     kwFilterKeywords = message.keywords || [];
     document.querySelectorAll('[data-nli-kw-checked]').forEach(el => {
       delete el.dataset.nliKwChecked; delete el.dataset.nliKwHidden;
@@ -414,7 +446,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Location filter changed
   if (message.action === "locFilterChanged") {
     locFilterEnabled = message.enabled;
-    locFilterCities  = message.cities || [];
+    locFilterCities = message.cities || [];
     document.querySelectorAll('[data-nli-loc-checked]').forEach(el => {
       delete el.dataset.nliLocChecked; delete el.dataset.nliLocHidden;
       syncDisplay(el);

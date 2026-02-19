@@ -154,6 +154,23 @@
     /* Info box */
     .info-box { font-size: 12px; color: var(--muted); line-height: 1.7; background: white; border-radius: 9px; padding: 11px 12px; border: 1px solid var(--border); margin-top: 13px; }
     .info-box b { color: var(--text); }
+
+    /* Hidden jobs tab */
+    .hidden-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .hidden-count { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .refresh-btn { font-size: 11px; color: var(--blue); background: none; border: 1.5px solid var(--blue); border-radius: 6px; cursor: pointer; font-weight: 600; padding: 4px 10px; transition: all .15s; }
+    .refresh-btn:hover { background: var(--blue); color: white; }
+    .hidden-item { background: var(--white); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; margin-bottom: 7px; }
+    .hidden-item:last-child { margin-bottom: 0; }
+    .hidden-item-title { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+    .hidden-item-company { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .hidden-item-meta { font-size: 10.5px; color: var(--faint); margin-top: 4px; }
+    .hidden-item-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .reason-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .reason-badge.applied  { background: #fef2f2; color: var(--red); border: 1px solid #fecaca; }
+    .reason-badge.exp      { background: var(--blue-light); color: var(--blue); border: 1px solid #bfdbfe; }
+    .reason-badge.keywords { background: var(--purple-light); color: var(--purple); border: 1px solid #c4b5fd; }
+    .reason-badge.location { background: var(--teal-light); color: var(--teal); border: 1px solid #5eead4; }
   </style>
 </head>
 <body>
@@ -176,6 +193,7 @@
     <div class="tab" data-tab="keywords">🔑 Keywords</div>
     <div class="tab" data-tab="location">📍 Location</div>
     <div class="tab" data-tab="search">🔗 Search</div>
+    <div class="tab" data-tab="hidden">🚫 Hidden</div>
     <div class="tab" data-tab="history">📋 History</div>
   </div>
 
@@ -298,6 +316,20 @@
         <div class="option-desc">Find employees at the company in this role</div>
       </div>
     </label>
+  </div>
+
+  <!-- ── Tab: Hidden ── -->
+  <div class="tab-content" id="tab-hidden">
+    <div class="hidden-toolbar">
+      <span class="hidden-count" id="hidden-count">0 hidden jobs</span>
+      <button class="refresh-btn" id="refreshHiddenBtn">↻ Refresh</button>
+    </div>
+    <div id="hiddenList">
+      <div class="empty-state">
+        <div class="empty-icon">✅</div>
+        <p>No hidden jobs.<br>Open a Naukri search page<br>and enable filters to see results.</p>
+      </div>
+    </div>
   </div>
 
   <!-- ── Tab: History ── -->
