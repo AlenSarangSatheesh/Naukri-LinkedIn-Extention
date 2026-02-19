@@ -6,6 +6,12 @@ const PRESET_KEYWORDS = [];
 
 const PRESET_LOCATIONS = [];
 
+const DEFAULT_LOCATIONS = [
+  "bangalore", "bengaluru", "remote", "chennai", "hyderabad",
+  "coimbatore", "ernakulam", "kochi", "kozhikode",
+  "thiruvananthapuram", "mangalore", "mysore", "kerala",
+];
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
@@ -19,7 +25,7 @@ document.querySelectorAll(".tab").forEach(tab => {
 
 // ── Shared util ───────────────────────────────────────────────────────────────
 function escHtml(s) {
-  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function sendToTab(action, payload) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -30,20 +36,20 @@ function sendToTab(action, payload) {
 }
 
 // ── Experience Filter ─────────────────────────────────────────────────────────
-const chkExpFilter  = document.getElementById("chk-exp-filter");
+const chkExpFilter = document.getElementById("chk-exp-filter");
 const expFilterCard = document.getElementById("exp-filter-card");
-const expChipsRow   = document.getElementById("exp-chips-row");
-const expHintVal    = document.getElementById("exp-hint-val");
-const expStatus     = document.getElementById("exp-status");
-const expStatusTx   = document.getElementById("exp-status-text");
-const expChips      = document.querySelectorAll("#exp-chips-row .chip");
+const expChipsRow = document.getElementById("exp-chips-row");
+const expHintVal = document.getElementById("exp-hint-val");
+const expStatus = document.getElementById("exp-status");
+const expStatusTx = document.getElementById("exp-status-text");
+const expChips = document.querySelectorAll("#exp-chips-row .chip");
 
-let expFilterEnabled    = false;
+let expFilterEnabled = false;
 let expFilterMaxAllowed = 2;
 
 chrome.storage.local.get(["expFilter"], (r) => {
   const s = r.expFilter || { enabled: false, maxAllowed: 2 };
-  expFilterEnabled    = s.enabled;
+  expFilterEnabled = s.enabled;
   expFilterMaxAllowed = s.maxAllowed;
   chkExpFilter.checked = expFilterEnabled;
   applyExpCardState();
@@ -74,7 +80,7 @@ function applyExpCardState() {
   expStatusTx.textContent = expFilterEnabled ? "Filter active" : "Filter off";
 }
 function setActiveExpChip(val) {
-  expChips.forEach(c => c.classList.toggle("active", parseInt(c.dataset.val,10) === val));
+  expChips.forEach(c => c.classList.toggle("active", parseInt(c.dataset.val, 10) === val));
 }
 function broadcastExp() {
   const prefs = { enabled: expFilterEnabled, maxAllowed: expFilterMaxAllowed };
@@ -85,31 +91,35 @@ function broadcastExp() {
 // Builds keyword-style and location-style filter UIs from shared logic.
 
 function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, statusId, statusTxId, cardId,
-  filterAction, activeClass, pillClass, presets, emptyText, msgAction }) {
+  filterAction, activeClass, pillClass, presets, emptyText, msgAction, defaultItems }) {
 
   const tagsArea = document.getElementById(tagsAreaId);
-  const input    = document.getElementById(inputId);
-  const addBtn   = document.getElementById(addBtnId);
-  const presetsEl= document.getElementById(presetsId);
+  const input = document.getElementById(inputId);
+  const addBtn = document.getElementById(addBtnId);
+  const presetsEl = document.getElementById(presetsId);
   const statusEl = document.getElementById(statusId);
   const statusTx = document.getElementById(statusTxId);
-  const cardEl   = document.getElementById(cardId);
+  const cardEl = document.getElementById(cardId);
 
   // Find the toggle inside the card
-  const toggle   = cardEl.querySelector('input[type="checkbox"]');
+  const toggle = cardEl.querySelector('input[type="checkbox"]');
 
-  let enabled  = false;
-  let items    = [];
+  let enabled = false;
+  let items = [];
 
   // Load
   chrome.storage.local.get([storageKey], (r) => {
-    const s = r[storageKey] || { enabled: false, [filterAction === "kwFilterChanged" ? "keywords" : "cities"]: [] };
+    const itemKey = filterAction === "kwFilterChanged" ? "keywords" : "cities";
+    const defaults = defaultItems || [];
+    const s = r[storageKey] || { enabled: defaults.length > 0, [itemKey]: defaults };
     enabled = s.enabled;
-    items   = (s.keywords || s.cities || []).slice();
+    items = (s.keywords || s.cities || []).slice();
+    if (items.length === 0 && defaults.length > 0) { items = defaults.slice(); enabled = true; }
     toggle.checked = enabled;
     applyCardState();
     renderTags();
     renderPresets();
+    if (!r[storageKey] && defaults.length > 0) broadcast(); // save defaults to storage
   });
 
   toggle.addEventListener("change", () => {
@@ -205,34 +215,35 @@ function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, s
 const kwFilter = makeTagFilter({
   storageKey: "kwFilter",
   tagsAreaId: "kw-tags-area",
-  inputId:    "kw-input",
-  addBtnId:   "kw-add-btn",
-  presetsId:  "kw-presets",
-  statusId:   "kw-status",
+  inputId: "kw-input",
+  addBtnId: "kw-add-btn",
+  presetsId: "kw-presets",
+  statusId: "kw-status",
   statusTxId: "kw-status-text",
-  cardId:     "kw-filter-card",
+  cardId: "kw-filter-card",
   filterAction: "kwFilterChanged",
-  activeClass:  "active-purple",
-  pillClass:    "kw-tag",
-  presets:      PRESET_KEYWORDS,
-  emptyText:    "No keywords yet — add from presets or type below",
+  activeClass: "active-purple",
+  pillClass: "kw-tag",
+  presets: PRESET_KEYWORDS,
+  emptyText: "No keywords yet — add from presets or type below",
 });
 
 // ── Build location filter ─────────────────────────────────────────────────────
 const locFilter = makeTagFilter({
   storageKey: "locFilter",
   tagsAreaId: "loc-tags-area",
-  inputId:    "loc-input",
-  addBtnId:   "loc-add-btn",
-  presetsId:  "loc-presets",
-  statusId:   "loc-status",
+  inputId: "loc-input",
+  addBtnId: "loc-add-btn",
+  presetsId: "loc-presets",
+  statusId: "loc-status",
   statusTxId: "loc-status-text",
-  cardId:     "loc-filter-card",
+  cardId: "loc-filter-card",
   filterAction: "locFilterChanged",
-  activeClass:  "active-teal",
-  pillClass:    "loc-tag",
-  presets:      PRESET_LOCATIONS,
-  emptyText:    "No locations yet — add from presets or type below",
+  activeClass: "active-teal",
+  pillClass: "loc-tag",
+  presets: PRESET_LOCATIONS,
+  emptyText: "No locations yet — type below to add",
+  defaultItems: DEFAULT_LOCATIONS,
 });
 
 // ── Listen for status updates from content script ─────────────────────────────
@@ -242,20 +253,20 @@ chrome.runtime.onMessage.addListener((message) => {
       ? `${message.hiddenCount} job${message.hiddenCount !== 1 ? "s" : ""} hidden`
       : "Filter active — 0 hidden";
   }
-  if (message.action === "kwFilterStatus")  kwFilter.updateStatus(message.hiddenCount);
+  if (message.action === "kwFilterStatus") kwFilter.updateStatus(message.hiddenCount);
   if (message.action === "locFilterStatus") locFilter.updateStatus(message.hiddenCount);
 });
 
 // ── Search option checkboxes ──────────────────────────────────────────────────
 const checkboxes = {
   linkedin: document.getElementById("chk-linkedin"),
-  dork:     document.getElementById("chk-dork"),
-  people:   document.getElementById("chk-people"),
+  dork: document.getElementById("chk-dork"),
+  people: document.getElementById("chk-people"),
 };
 const rows = {
   linkedin: document.getElementById("row-linkedin"),
-  dork:     document.getElementById("row-dork"),
-  people:   document.getElementById("row-people"),
+  dork: document.getElementById("row-dork"),
+  people: document.getElementById("row-people"),
 };
 
 chrome.storage.local.get(["openPrefs"], (r) => {
@@ -268,18 +279,20 @@ chrome.storage.local.get(["openPrefs"], (r) => {
 Object.keys(checkboxes).forEach(key => {
   checkboxes[key].addEventListener("change", () => {
     rows[key].classList.toggle("checked", checkboxes[key].checked);
-    chrome.storage.local.set({ openPrefs: {
-      linkedin: checkboxes.linkedin.checked,
-      dork:     checkboxes.dork.checked,
-      people:   checkboxes.people.checked,
-    }});
+    chrome.storage.local.set({
+      openPrefs: {
+        linkedin: checkboxes.linkedin.checked,
+        dork: checkboxes.dork.checked,
+        people: checkboxes.people.checked,
+      }
+    });
   });
 });
 
 // ── History ───────────────────────────────────────────────────────────────────
-const historyList  = document.getElementById("historyList");
+const historyList = document.getElementById("historyList");
 const historyCount = document.getElementById("history-count");
-const clearBtn     = document.getElementById("clearBtn");
+const clearBtn = document.getElementById("clearBtn");
 
 loadHistory();
 clearBtn.addEventListener("click", () => {
@@ -299,10 +312,10 @@ function loadHistory() {
     jobs.forEach(job => {
       const item = document.createElement("div");
       item.className = "history-item";
-      const date = new Date(job.firstSeen).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
-      item.innerHTML = `<div class="history-dot"></div><div class="history-item-body"><div class="history-company">${escHtml(job.company)}</div><div class="history-position">${escHtml(job.position||"—")}</div><div class="history-date">${date}</div></div><button class="del-btn" title="Remove">×</button>`;
+      const date = new Date(job.firstSeen).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      item.innerHTML = `<div class="history-dot"></div><div class="history-item-body"><div class="history-company">${escHtml(job.company)}</div><div class="history-position">${escHtml(job.position || "—")}</div><div class="history-date">${date}</div></div><button class="del-btn" title="Remove">×</button>`;
       item.querySelector(".del-btn").addEventListener("click", () => {
-        chrome.runtime.sendMessage({ action:"deleteEntry", company:job.company, position:job.position }, () => loadHistory());
+        chrome.runtime.sendMessage({ action: "deleteEntry", company: job.company, position: job.position }, () => loadHistory());
       });
       historyList.appendChild(item);
     });
