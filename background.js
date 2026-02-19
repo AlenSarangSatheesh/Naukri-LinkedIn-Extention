@@ -24,42 +24,44 @@ function openOrUpdateTab(urlPattern, newUrl) {
   });
 }
 
+// ── Open side panel when toolbar icon is clicked ──────────────────────────────
+chrome.action.onClicked.addListener((tab) => {
+  chrome.sidePanel.open({ windowId: tab.windowId });
+});
+
+// ── Allow side panel on all naukri pages ──────────────────────────────────────
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === "complete" && tab.url && /naukri\.com/.test(tab.url)) {
+    chrome.sidePanel.setOptions({ tabId, path: "sidepanel.html", enabled: true });
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // ── Check history + open tabs based on prefs ──────────────────────────────
+  // ── Check history + open tabs based on prefs ──────────────────────────────────────────────────
   if (message.action === "checkAndOpen") {
     const { company, position } = message;
     const bothKnown = !!(company && position);
     const key = makeKey(company, position);
 
-    // Load both history and user prefs in parallel
     chrome.storage.local.get(["appliedJobs", "openPrefs"], (result) => {
       const appliedJobs = result.appliedJobs || {};
       const prefs = result.openPrefs || { linkedin: true, dork: true, people: true };
 
       if (bothKnown && appliedJobs[key]) {
-        // Duplicate — warn, open nothing
-        sendResponse({
-          alreadyApplied: true,
-          firstSeen: formatDate(appliedJobs[key].firstSeen),
-        });
+        sendResponse({ alreadyApplied: true, firstSeen: formatDate(appliedJobs[key].firstSeen) });
         return;
       }
 
-      // Save new entry if both fields known
       if (bothKnown) {
         appliedJobs[key] = { company, position, firstSeen: new Date().toISOString() };
       }
 
       chrome.storage.local.set({ appliedJobs }, () => {
-
-        // 1. LinkedIn company search
         if (prefs.linkedin) {
           const url = `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(company)}&origin=GLOBAL_SEARCH_HEADER`;
           openOrUpdateTab("https://www.linkedin.com/*", url);
         }
-
-        // 2. Google dork — find profiles via Google
         if (prefs.dork) {
           const dorkQuery = position
             ? `site:linkedin.com/in "${company}" "${position}"`
@@ -67,19 +69,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const url = `https://www.google.com/search?q=${encodeURIComponent(dorkQuery)}`;
           openOrUpdateTab("https://www.google.com/*", url);
         }
-
-        // 3. LinkedIn People search — find employees inside LinkedIn
         if (prefs.people) {
           const keywords = position ? `${company} ${position}` : company;
           const url = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}&origin=GLOBAL_SEARCH_HEADER`;
-          // People search needs its own tab (different from company search tab)
           chrome.tabs.create({ url, active: false });
         }
-
         sendResponse({ alreadyApplied: false });
       });
     });
-
     return true;
   }
 
@@ -111,13 +108,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Manifest keyboard command ─────────────────────────────────────────────────
+// ── Manifest keyboard command ──────────────────────────────────────────────────
 chrome.commands.onCommand.addListener((command) => {
   if (command === "search-linkedin") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (tab && tab.url && tab.url.includes("naukri.com")) {
-        chrome.tabs.sendMessage(tab.id, { action: "triggerSearch" });
+        chrome.tabs.sendMessage(tab.id, { action: "triggerSearch" }, () => {
+          void chrome.runtime.lastError;
+        });
       }
     });
   }

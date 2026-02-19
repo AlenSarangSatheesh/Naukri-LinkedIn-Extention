@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Naukri → LinkedIn",
-  "version": "1.0",
-  "description": "Press Ctrl+Shift+L on any Naukri job listing to search the company on LinkedIn and find employees via Google dork",
-  "permissions": ["tabs", "scripting", "storage"],
+  "version": "1.1",
+  "description": "Side panel: filter jobs by experience, track applications, search LinkedIn",
+  "permissions": ["tabs", "scripting", "storage", "sidePanel"],
   "host_permissions": [
     "https://www.naukri.com/*",
     "https://naukri.com/*",
@@ -20,8 +20,11 @@
   "background": {
     "service_worker": "background.js"
   },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "action": {
-    "default_popup": "popup.html",
+    "default_title": "Naukri → LinkedIn",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
