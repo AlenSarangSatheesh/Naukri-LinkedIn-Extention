@@ -3,6 +3,9 @@ console.log("[NaukriLinkedIn] ✅ Content script loaded on:", window.location.hr
 
 // ── Shared Helpers ───────────────────────────────────────────────────────────
 
+// Single selector for ALL job card types (regular + promoted/sponsored)
+const CARD_SELECTOR = '.srp-jobtuple-wrapper, [class*="jobTuple"], .srp-tuple, .cust-job-tuple';
+
 function makeKey(company, position) {
   const c = (company || "").toLowerCase().trim();
   const p = (position || "").toLowerCase().trim();
@@ -230,7 +233,7 @@ function syncDisplay(card) {
 // ── Filter: hide applied jobs ─────────────────────────────────────────────────
 
 function hideAppliedJobs() {
-  document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (card.dataset.nliChecked === "true") return;
     card.dataset.nliChecked = "true";
     if (isHistoryHidden(card)) card.style.display = "none";
@@ -243,7 +246,7 @@ function applyExpFilter() {
   if (!storageReady) return;
   let hiddenCount = 0;
 
-  document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (isHistoryHidden(card)) return;
     if (card.dataset.nliExpChecked === "true") {
       if (card.dataset.nliExpHidden === "true") hiddenCount++;
@@ -266,7 +269,7 @@ function applyKeywordFilter() {
   if (!storageReady) return;
   let hiddenCount = 0;
 
-  document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (isHistoryHidden(card)) return;
     if (card.dataset.nliKwChecked === "true") {
       if (card.dataset.nliKwHidden === "true") hiddenCount++;
@@ -288,7 +291,7 @@ function applyLocationFilter() {
   if (!storageReady) return;
   let hiddenCount = 0;
 
-  document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (isHistoryHidden(card)) return;
     if (card.dataset.nliLocChecked === "true") {
       if (card.dataset.nliLocHidden === "true") hiddenCount++;
@@ -421,7 +424,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Side panel requests list of hidden jobs
   if (message.action === "getHiddenJobs") {
     const hiddenJobs = [];
-    document.querySelectorAll('.srp-jobtuple-wrapper,[class*="jobTuple"]').forEach(card => {
+    document.querySelectorAll(CARD_SELECTOR).forEach(card => {
       if (card.style.display !== "none") return;
 
       const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
