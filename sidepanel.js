@@ -2,24 +2,9 @@
 
 // ── Preset data ───────────────────────────────────────────────────────────────
 
-const PRESET_KEYWORDS = [
-  "cyber", "cybersecurity", "security analyst", "penetration test",
-  "pentest", "pentesting", "ethical hacking", "ethical hacker",
-  "vulnerability", "vapt", "bug bounty", "red team", "blue team",
-  "soc analyst", "soc", "incident response", "threat hunting",
-  "web application security", "web app security", "appsec",
-  "network security", "information security", "infosec",
-  "api security", "api testing", "owasp", "burp suite",
-  "metasploit", "nmap", "kali", "malware analysis",
-  "security operations", "devsecops", "cloud security",
-  "iam", "siem", "splunk", "security engineer",
-];
+const PRESET_KEYWORDS = [];
 
-const PRESET_LOCATIONS = [
-  "Bengaluru", "Mumbai", "Delhi", "Hyderabad", "Chennai",
-  "Pune", "Kolkata", "Noida", "Gurugram", "Ahmedabad",
-  "Kochi", "Thiruvananthapuram", "Coimbatore", "Remote",
-];
+const PRESET_LOCATIONS = [];
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab").forEach(tab => {
