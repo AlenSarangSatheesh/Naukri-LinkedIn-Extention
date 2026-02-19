@@ -409,12 +409,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const exp = getCardMinExp(card);
       const loc = getCardLocation(card);
 
+      // Get the job detail URL from the title link
+      const linkEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+      const url = linkEl ? linkEl.href : null;
+
       hiddenJobs.push({
         title,
         company,
         reasons,
         exp: exp !== null ? exp + " yrs" : null,
         location: loc || null,
+        url,
       });
     });
     sendResponse({ hiddenJobs });

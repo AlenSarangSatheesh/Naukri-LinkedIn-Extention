@@ -355,6 +355,15 @@ function loadHiddenJobs() {
       jobs.forEach(job => {
         const item = document.createElement("div");
         item.className = "hidden-item";
+        if (job.url) {
+          item.style.cursor = "pointer";
+          item.title = "Click to open job details";
+          item.addEventListener("click", () => {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+              if (tabs[0]) chrome.tabs.update(tabs[0].id, { url: job.url });
+            });
+          });
+        }
         const metaParts = [];
         if (job.exp) metaParts.push(`Exp: ${escHtml(job.exp)}`);
         if (job.location) metaParts.push(`📍 ${escHtml(job.location)}`);
