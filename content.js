@@ -15,21 +15,30 @@ function parseMinExperience(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
   if (t.includes("fresher") || t === "0" || t === "0 yrs" || t === "0-1 yrs") return 0;
-  const rangeMatch = t.match(/^(\d+)\s*[-\u2013]\s*\d+/);
+  // "5-10 Yrs", "5 - 10 Yrs", "5–10 Yrs"
+  const rangeMatch = t.match(/(\d+)\s*[-–—]\s*\d+\s*(?:yr|year)/i);
   if (rangeMatch) return parseInt(rangeMatch[1], 10);
-  const plusMatch = t.match(/^(\d+)\s*\+/);
+  // "5+ Yrs"
+  const plusMatch = t.match(/(\d+)\s*\+\s*(?:yr|year)?/i);
   if (plusMatch) return parseInt(plusMatch[1], 10);
-  const singleMatch = t.match(/^(\d+)/);
+  // "5 Yrs", "5 Years"
+  const singleMatch = t.match(/(\d+)\s*(?:yr|year)/i);
   if (singleMatch) return parseInt(singleMatch[1], 10);
+  // plain number at start
+  const numMatch = t.match(/^(\d+)/);
+  if (numMatch) return parseInt(numMatch[1], 10);
   return null;
 }
 
 function getCardMinExp(card) {
+  // 1. Try specific selectors first (fastest)
   const selectors = [
     'span.expwdth', 'span[class*="expwdth"]',
     'span[class*="exp"] span[title]',
     'span[title*=" Yrs"]', 'span[title*=" yrs"]',
     'span[title*="Year"]', 'span[title*="Fresher"]',
+    'span[class*="experience"]', '[class*="experience"]',
+    'span[class*="exp-wrap"]', '[class*="exp-wrap"]',
   ];
   for (const sel of selectors) {
     const el = card.querySelector(sel);
@@ -38,6 +47,26 @@ function getCardMinExp(card) {
       if (minExp !== null) return minExp;
     }
   }
+
+  // 2. Scan all spans/small elements for text containing "Yr" or "Year"
+  const candidates = card.querySelectorAll('span, li, div.row2, div.row3');
+  for (const el of candidates) {
+    const txt = (el.getAttribute("title") || el.innerText || "").trim();
+    if (/\d+\s*[-–—+]?\s*\d*\s*(?:yr|year)/i.test(txt) || /fresher/i.test(txt)) {
+      const minExp = parseMinExperience(txt);
+      if (minExp !== null) return minExp;
+    }
+  }
+
+  // 3. Final fallback: regex scan the entire card text
+  const fullText = card.innerText || "";
+  const expPattern = fullText.match(/(\d+\s*[-–—]\s*\d+\s*(?:Yrs?|Years?))/i)
+    || fullText.match(/(\d+\s*\+?\s*(?:Yrs?|Years?))/i);
+  if (expPattern) {
+    const minExp = parseMinExperience(expPattern[1]);
+    if (minExp !== null) return minExp;
+  }
+
   return null;
 }
 
