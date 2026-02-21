@@ -248,6 +248,20 @@
       background: var(--teal);
     }
 
+    .toggle-wrap.orange input:checked+.toggle-track {
+      background: #d97706;
+    }
+
+    .filter-card.active-orange {
+      border-color: #d97706;
+      background: #fffbeb;
+    }
+
+    .filter-status.orange {
+      color: #b45309;
+      background: #fffbeb;
+    }
+
     .toggle-wrap input:checked+.toggle-track::before {
       transform: translateX(18px);
     }
@@ -620,10 +634,12 @@
       display: flex;
       align-items: flex-start;
       gap: 10px;
+      transition: border-color .15s, box-shadow .15s;
     }
 
-    .history-item:last-child {
-      margin-bottom: 0;
+    .history-item:hover {
+      border-color: var(--blue);
+      box-shadow: 0 2px 8px rgba(10, 102, 194, .12);
     }
 
     .history-dot {
@@ -834,16 +850,16 @@
   </div>
 
   <div class="tabs">
-    <div class="tab active" data-tab="filter">⚡ Exp</div>
-    <div class="tab" data-tab="keywords">🔑 Keywords</div>
-    <div class="tab" data-tab="location">📍 Location</div>
+    <div class="tab active" data-tab="filters">⚡ Filters</div>
     <div class="tab" data-tab="search">🔗 Search</div>
     <div class="tab" data-tab="hidden">🚫 Hidden</div>
     <div class="tab" data-tab="history">📋 History</div>
   </div>
 
-  <!-- ── Tab: Experience ── -->
-  <div class="tab-content active" id="tab-filter">
+  <!-- ── Tab: Filters (Experience + Keywords + Location) ── -->
+  <div class="tab-content active" id="tab-filters">
+
+    <!-- Experience -->
     <div class="section-label">Experience Filter</div>
     <div class="filter-card" id="exp-filter-card">
       <div class="filter-card-top">
@@ -866,10 +882,10 @@
       <div class="filter-hint">Hiding jobs requiring more than <b id="exp-hint-val">2</b> yr(s) minimum experience</div>
       <div class="filter-status off" id="exp-status"><span>⬤</span> <span id="exp-status-text">Filter off</span></div>
     </div>
-  </div>
 
-  <!-- ── Tab: Keywords ── -->
-  <div class="tab-content" id="tab-keywords">
+    <div class="divider"></div>
+
+    <!-- Keywords -->
     <div class="section-label">Keyword Filter</div>
     <div class="filter-card" id="kw-filter-card">
       <div class="filter-card-top">
@@ -901,10 +917,10 @@
       </div>
       <div class="filter-status off" id="kw-status"><span>⬤</span> <span id="kw-status-text">Filter off</span></div>
     </div>
-  </div>
 
-  <!-- ── Tab: Location ── -->
-  <div class="tab-content" id="tab-location">
+    <div class="divider"></div>
+
+    <!-- Location -->
     <div class="section-label">Location Filter</div>
     <div class="filter-card" id="loc-filter-card">
       <div class="filter-card-top">
@@ -936,6 +952,30 @@
         Add <b>"Remote"</b> to also show work-from-home jobs.
       </div>
       <div class="filter-status off teal" id="loc-status"><span>⬤</span> <span id="loc-status-text">Filter off</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Auto-Skip -->
+    <div class="section-label">Page Navigation</div>
+    <div class="filter-card" id="autoskip-filter-card">
+      <div class="filter-card-top">
+        <div class="filter-card-info">
+          <div class="filter-card-name">⏭ Auto-skip empty pages</div>
+          <div class="filter-card-desc">Automatically jumps to next page when <b>all jobs are filtered out</b></div>
+        </div>
+        <label class="toggle-wrap orange">
+          <input type="checkbox" id="chk-autoskip" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="filter-hint" style="margin-top:10px">
+        No more wasting clicks on pages with <b>0 matching jobs</b>. Stops when it finds matches or reaches the last page.
+      </div>
+      <div id="autoskip-status-row" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px">
+        <div class="filter-status off" id="autoskip-status"><span>⬤</span> <span id="autoskip-status-text">Auto-skip off</span></div>
+        <button id="autoskip-reset-btn" style="display:none;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer;padding:3px 8px;font-weight:600">Reset counter</button>
       </div>
     </div>
   </div>

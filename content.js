@@ -171,6 +171,10 @@ let locFilterEnabled = false;
 let locFilterCities = [];
 let storageReady = false;
 
+// ── Auto-Skip state ───────────────────────────────────────────────────────────
+let autoSkipEnabled = false;
+let autoSkipTimer = null;
+
 // ── Toast ────────────────────────────────────────────────────────────────────
 
 function showToast(message, type = "success", duration = 4000) {
@@ -319,7 +323,7 @@ function runAllFilters() {
 // ── Storage bootstrap ─────────────────────────────────────────────────────────
 
 function loadFromStorage(callback) {
-  chrome.storage.local.get(["appliedJobs", "expFilter", "kwFilter", "locFilter"], (result) => {
+  chrome.storage.local.get(["appliedJobs", "expFilter", "kwFilter", "locFilter", "autoSkip"], (result) => {
     appliedJobsCache = result.appliedJobs || {};
 
     const ef = result.expFilter || { enabled: false, maxAllowed: 2 };
@@ -334,14 +338,98 @@ function loadFromStorage(callback) {
     locFilterEnabled = lf.enabled;
     locFilterCities = lf.cities || [];
 
+    const as = result.autoSkip || { enabled: false };
+    autoSkipEnabled = as.enabled;
+
     storageReady = true;
     if (callback) callback();
   });
 }
 
+// ── Auto-Skip helpers ─────────────────────────────────────────────────────────
+
+function countVisibleCards() {
+  let count = 0;
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
+    if (card.style.display !== "none") count++;
+  });
+  return count;
+}
+
+function findNextPageButton() {
+  // Try standard Naukri "Next" anchor in pagination
+  const pagWrapper = document.querySelector(
+    '.pagination-wrapper, [class*="pagination"], .pages-list, .srp-pagination'
+  );
+  if (pagWrapper) {
+    const links = pagWrapper.querySelectorAll("a");
+    for (const a of links) {
+      if (/^next$/i.test(a.innerText.trim())) return a;
+    }
+  }
+  // Fallback: any anchor with text "Next" on the page
+  for (const a of document.querySelectorAll("a")) {
+    if (/^next$/i.test(a.innerText.trim())) return a;
+  }
+  return null;
+}
+
+function checkAutoSkip() {
+  if (!autoSkipEnabled || !storageReady) return;
+  if (autoSkipTimer) clearTimeout(autoSkipTimer);
+
+  autoSkipTimer = setTimeout(() => {
+    autoSkipTimer = null;
+    const visible = countVisibleCards();
+
+    if (visible === 0) {
+      // All jobs filtered out on this page — try to go to next
+      const nextBtn = findNextPageButton();
+      if (!nextBtn) {
+        // No next page — end of results
+        chrome.storage.local.get(["autoSkipCount"], (r) => {
+          const n = r.autoSkipCount || 0;
+          chrome.storage.local.set({ autoSkipCount: 0 });
+          showToast(
+            `🔍 Reached the last page. No matching jobs found${n > 0 ? ` after skipping <b>${n}</b> page${n !== 1 ? "s" : ""}` : ""}.`,
+            "error", 7000
+          );
+        });
+        return;
+      }
+      // Increment skip count and navigate
+      chrome.storage.local.get(["autoSkipCount"], (r) => {
+        const newCount = (r.autoSkipCount || 0) + 1;
+        chrome.storage.local.set({ autoSkipCount: newCount }, () => {
+          showToast(
+            `⏭ Page has <b>0 matching jobs</b> — auto-skipping... (<b>${newCount}</b> page${newCount !== 1 ? "s" : ""} skipped)`,
+            "warning", 1800
+          );
+          setTimeout(() => nextBtn.click(), 1400);
+        });
+      });
+    } else {
+      // Found matching jobs — check if we skipped any pages
+      chrome.storage.local.get(["autoSkipCount"], (r) => {
+        const n = r.autoSkipCount || 0;
+        if (n > 0) {
+          chrome.storage.local.set({ autoSkipCount: 0 });
+          showToast(
+            `✅ Found <b>${visible}</b> matching job${visible !== 1 ? "s" : ""}!<br><span style="font-weight:400;font-size:12px">Auto-skipped <b>${n}</b> empty page${n !== 1 ? "s" : ""} to get here.</span>`,
+            "success", 6000
+          );
+          // Notify sidepanel to update skip count display
+          try { chrome.runtime.sendMessage({ action: "autoSkipResult", skipped: n, found: visible }); } catch (e) { }
+        }
+      });
+    }
+  }, 1400); // Wait for all filters to settle before deciding
+}
+
 loadFromStorage(() => {
   fullReset();
   runAllFilters();
+  checkAutoSkip();
 });
 
 chrome.storage.onChanged.addListener((changes) => {
@@ -349,6 +437,7 @@ chrome.storage.onChanged.addListener((changes) => {
     appliedJobsCache = changes.appliedJobs.newValue || {};
     fullReset();
     runAllFilters();
+    checkAutoSkip();
   }
 });
 
@@ -400,7 +489,8 @@ function openLinkedIn() {
   const company = extractCompanyName();
   const position = extractJobPosition();
   if (!company) { showToast("No company name found. Please open a specific job listing.", "error"); return; }
-  chrome.runtime.sendMessage({ action: "checkAndOpen", company, position }, (response) => {
+  const url = window.location.href;
+  chrome.runtime.sendMessage({ action: "checkAndOpen", company, position, url }, (response) => {
     if (response && response.alreadyApplied) {
       showToast(`Already searched/applied!<br><b>${position || "This role"}</b> at <b>${company}</b><br><span style="font-weight:400;opacity:.9;font-size:12px">First seen: ${response.firstSeen}</span>`, "warning", 8000);
     } else {
@@ -467,6 +557,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       syncDisplay(el);
     });
     applyExpFilter();
+    checkAutoSkip();
   }
 
   // Keyword filter changed
@@ -478,6 +569,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       syncDisplay(el);
     });
     applyKeywordFilter();
+    checkAutoSkip();
   }
 
   // Location filter changed
@@ -489,5 +581,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       syncDisplay(el);
     });
     applyLocationFilter();
+    checkAutoSkip();
+  }
+
+  // Auto-skip changed
+  if (message.action === "autoSkipChanged") {
+    autoSkipEnabled = message.enabled;
+    if (!autoSkipEnabled) {
+      // Reset counter when user disables auto-skip
+      chrome.storage.local.set({ autoSkipCount: 0 });
+      if (autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
+    } else {
+      checkAutoSkip();
+    }
   }
 });

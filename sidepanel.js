@@ -256,7 +256,62 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message.action === "kwFilterStatus") kwFilter.updateStatus(message.hiddenCount);
   if (message.action === "locFilterStatus") locFilter.updateStatus(message.hiddenCount);
+  if (message.action === "autoSkipResult") updateAutoSkipStatus();
 });
+
+// ── Auto-Skip Filter ──────────────────────────────────────────────────────────
+const chkAutoSkip = document.getElementById("chk-autoskip");
+const autoSkipCard = document.getElementById("autoskip-filter-card");
+const autoSkipStatus = document.getElementById("autoskip-status");
+const autoSkipStatusTx = document.getElementById("autoskip-status-text");
+const autoSkipResetBtn = document.getElementById("autoskip-reset-btn");
+
+let autoSkipEnabled = false;
+
+chrome.storage.local.get(["autoSkip", "autoSkipCount"], (r) => {
+  const s = r.autoSkip || { enabled: false };
+  autoSkipEnabled = s.enabled;
+  chkAutoSkip.checked = autoSkipEnabled;
+  applyAutoSkipCardState();
+  updateAutoSkipStatus();
+});
+
+chkAutoSkip.addEventListener("change", () => {
+  autoSkipEnabled = chkAutoSkip.checked;
+  if (!autoSkipEnabled) chrome.storage.local.set({ autoSkipCount: 0 });
+  applyAutoSkipCardState();
+  updateAutoSkipStatus();
+  const payload = { enabled: autoSkipEnabled };
+  chrome.storage.local.set({ autoSkip: payload }, () => sendToTab("autoSkipChanged", payload));
+});
+
+autoSkipResetBtn.addEventListener("click", () => {
+  chrome.storage.local.set({ autoSkipCount: 0 }, updateAutoSkipStatus);
+});
+
+function applyAutoSkipCardState() {
+  autoSkipCard.classList.toggle("active-orange", autoSkipEnabled);
+  autoSkipStatus.classList.toggle("off", !autoSkipEnabled);
+  autoSkipStatus.classList.toggle("orange", autoSkipEnabled);
+}
+
+function updateAutoSkipStatus() {
+  chrome.storage.local.get(["autoSkipCount"], (r) => {
+    const n = r.autoSkipCount || 0;
+    if (!autoSkipEnabled) {
+      autoSkipStatusTx.textContent = "Auto-skip off";
+      autoSkipResetBtn.style.display = "none";
+      return;
+    }
+    if (n === 0) {
+      autoSkipStatusTx.textContent = "Ready — watching for empty pages";
+      autoSkipResetBtn.style.display = "none";
+    } else {
+      autoSkipStatusTx.textContent = `${n} page${n !== 1 ? "s" : ""} skipped so far`;
+      autoSkipResetBtn.style.display = "block";
+    }
+  });
+}
 
 // ── Search option checkboxes ──────────────────────────────────────────────────
 const checkboxes = {
@@ -314,8 +369,18 @@ function loadHistory() {
       const item = document.createElement("div");
       item.className = "history-item";
       const date = new Date(job.firstSeen).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      if (job.url) {
+        item.style.cursor = "pointer";
+        item.title = "Click to open job listing";
+        item.addEventListener("click", () => {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]) chrome.tabs.update(tabs[0].id, { url: job.url });
+          });
+        });
+      }
       item.innerHTML = `<div class="history-dot"></div><div class="history-item-body"><div class="history-company">${escHtml(job.company)}</div><div class="history-position">${escHtml(job.position || "—")}</div><div class="history-date">${date}</div></div><button class="del-btn" title="Remove">×</button>`;
-      item.querySelector(".del-btn").addEventListener("click", () => {
+      item.querySelector(".del-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
         chrome.runtime.sendMessage({ action: "deleteEntry", company: job.company, position: job.position }, () => loadHistory());
       });
       historyList.appendChild(item);

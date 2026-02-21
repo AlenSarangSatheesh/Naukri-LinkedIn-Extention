@@ -40,7 +40,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // ── Check history + open tabs based on prefs ──────────────────────────────────────────────────
   if (message.action === "checkAndOpen") {
-    const { company, position } = message;
+    const { company, position, url } = message;
     const bothKnown = !!(company && position);
     const key = makeKey(company, position);
 
@@ -54,7 +54,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       if (bothKnown) {
-        appliedJobs[key] = { company, position, firstSeen: new Date().toISOString() };
+        appliedJobs[key] = { company, position, url: url || null, firstSeen: new Date().toISOString() };
       }
 
       chrome.storage.local.set({ appliedJobs }, () => {
