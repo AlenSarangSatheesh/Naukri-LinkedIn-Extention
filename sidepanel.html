@@ -831,6 +831,31 @@
       color: var(--teal);
       border: 1px solid #5eead4;
     }
+
+    .reason-badge.ignored {
+      background: #fff7ed;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+    }
+
+    /* Restore button */
+    .restore-btn {
+      font-size: 11px;
+      color: var(--green);
+      background: #f0fdf4;
+      border: 1.5px solid #86efac;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      padding: 4px 10px;
+      transition: all .15s;
+      margin-top: 6px;
+      display: inline-block;
+    }
+    .restore-btn:hover {
+      background: var(--green);
+      color: white;
+    }
   </style>
 </head>
 
@@ -853,6 +878,7 @@
     <div class="tab active" data-tab="filters">⚡ Filters</div>
     <div class="tab" data-tab="search">🔗 Search</div>
     <div class="tab" data-tab="hidden">🚫 Hidden</div>
+    <div class="tab" data-tab="ignored">⛔ Ignored</div>
     <div class="tab" data-tab="history">📋 History</div>
   </div>
 
@@ -1016,6 +1042,23 @@
       <div class="empty-state">
         <div class="empty-icon">✅</div>
         <p>No hidden jobs.<br>Open a Naukri search page<br>and enable filters to see results.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Ignored ── -->
+  <div class="tab-content" id="tab-ignored">
+    <div class="hidden-toolbar">
+      <span class="hidden-count" id="ignored-count">0 ignored jobs</span>
+      <button class="clear-btn" id="clearIgnoredBtn">Clear all</button>
+    </div>
+    <div class="info-box" style="margin-top:0;margin-bottom:10px;border-color:#fde68a;background:#fffbeb;">
+      💡 Jobs you dismissed with <b>👎 Not Interested</b>. They stay hidden across all pages &amp; sessions. Click <b>Restore</b> to bring one back.
+    </div>
+    <div id="ignoredList">
+      <div class="empty-state">
+        <div class="empty-icon">👍</div>
+        <p>No ignored jobs yet.<br>Hover a job card and click<br><b>👎 Not Interested</b> to hide it forever.</p>
       </div>
     </div>
   </div>

@@ -21,6 +21,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
     if (tab.dataset.tab === "history") loadHistory();
     if (tab.dataset.tab === "hidden") loadHiddenJobs();
+    if (tab.dataset.tab === "ignored") loadIgnoredJobs();
   });
 });
 
@@ -342,6 +343,111 @@ Object.keys(checkboxes).forEach(key => {
         people: checkboxes.people.checked,
       }
     });
+  });
+});
+
+// ── Ignored Jobs ──────────────────────────────────────────────────────────────
+const ignoredList = document.getElementById("ignoredList");
+const ignoredCount = document.getElementById("ignored-count");
+const clearIgnoredBtn = document.getElementById("clearIgnoredBtn");
+
+clearIgnoredBtn.addEventListener("click", () => {
+  if (!confirm("Remove all ignored jobs? They will become visible again.")) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0] && tabs[0].url && /naukri\.com/.test(tabs[0].url)) {
+      chrome.tabs.sendMessage(tabs[0].id, { action: "clearIgnored" }, () => loadIgnoredJobs());
+    } else {
+      chrome.storage.local.set({ ignoredJobs: {} }, () => loadIgnoredJobs());
+    }
+  });
+});
+
+// Update count badge whenever ignoredJobs storage changes
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.ignoredJobs) {
+    const jobs = Object.keys(changes.ignoredJobs.newValue || {});
+    ignoredCount.textContent = `${jobs.length} ignored job${jobs.length !== 1 ? "s" : ""}`;
+  }
+});
+
+function loadIgnoredJobs() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const sendMsg = (cb) => {
+      if (tabs[0] && tabs[0].url && /naukri\.com/.test(tabs[0].url)) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: "getIgnoredList" }, (resp) => {
+          if (chrome.runtime.lastError || !resp) { loadIgnoredFromStorage(cb); return; }
+          cb(resp.list || []);
+        });
+      } else {
+        loadIgnoredFromStorage(cb);
+      }
+    };
+    sendMsg(renderIgnoredJobs);
+  });
+}
+
+function loadIgnoredFromStorage(cb) {
+  chrome.storage.local.get(["ignoredJobs"], (r) => {
+    const cache = r.ignoredJobs || {};
+    const list = Object.entries(cache).map(([key, val]) => ({
+      key, company: val.company || "", title: val.title || "", hiddenAt: val.hiddenAt || null
+    }));
+    list.sort((a, b) => (b.hiddenAt || "").localeCompare(a.hiddenAt || ""));
+    cb(list);
+  });
+}
+
+function renderIgnoredJobs(jobs) {
+  ignoredCount.textContent = `${jobs.length} ignored job${jobs.length !== 1 ? "s" : ""}`;
+  if (jobs.length === 0) {
+    ignoredList.innerHTML = `<div class="empty-state"><div class="empty-icon">👍</div><p>No ignored jobs yet.<br>Hover a job card and click<br><b>👎 Not Interested</b> to hide it forever.</p></div>`;
+    return;
+  }
+  ignoredList.innerHTML = "";
+  jobs.forEach(job => {
+    const item = document.createElement("div");
+    item.className = "hidden-item";
+    const date = job.hiddenAt
+      ? new Date(job.hiddenAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+      : "";
+    item.innerHTML = `
+      <div class="hidden-item-title">${escHtml(job.title || "—")}</div>
+      <div class="hidden-item-company">${escHtml(job.company || "—")}</div>
+      ${date ? `<div class="hidden-item-meta">Ignored on ${date}</div>` : ""}
+      <button class="restore-btn" data-key="${escHtml(job.key)}">↩ Restore</button>
+    `;
+    item.querySelector(".restore-btn").addEventListener("click", (e) => {
+      const key = e.target.dataset.key;
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const doRestore = (cb) => {
+          if (tabs[0] && tabs[0].url && /naukri\.com/.test(tabs[0].url)) {
+            chrome.tabs.sendMessage(tabs[0].id, { action: "restoreIgnored", key }, (r) => {
+              if (chrome.runtime.lastError) { restoreFromStorage(key, cb); return; }
+              cb();
+            });
+          } else {
+            restoreFromStorage(key, cb);
+          }
+        };
+        doRestore(() => loadIgnoredJobs());
+      });
+    });
+    ignoredList.appendChild(item);
+  });
+}
+
+function restoreFromStorage(key, cb) {
+  chrome.storage.local.get(["ignoredJobs"], (r) => {
+    const cache = r.ignoredJobs || {};
+    delete cache[key];
+    chrome.storage.local.set({ ignoredJobs: cache }, cb);
+  });
+}
+
+// Also listen for ignoredJobsUpdated from content script to refresh badge
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === "ignoredJobsUpdated") loadIgnoredFromStorage((jobs) => {
+    ignoredCount.textContent = `${jobs.length} ignored job${jobs.length !== 1 ? "s" : ""}`;
   });
 });
 

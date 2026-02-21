@@ -1,6 +1,32 @@
 // content.js — Runs on all naukri.com pages
 console.log("[NaukriLinkedIn] ✅ Content script loaded on:", window.location.href);
 
+// ── Extension context safety ──────────────────────────────────────────────────
+// After an extension update/reload, all chrome.* calls throw "context invalidated".
+// Every chrome API call goes through these wrappers so the page never crashes.
+
+function ctxOk() {
+  try { return !!chrome.runtime?.id; } catch (e) { return false; }
+}
+
+const safeStorage = {
+  get: (keys, cb) => {
+    if (!ctxOk()) return;
+    try { chrome.storage.local.get(keys, cb); } catch (e) { /* silent */ }
+  },
+  set: (obj, cb) => {
+    if (!ctxOk()) return;
+    try { chrome.storage.local.set(obj, cb); } catch (e) { /* silent */ }
+  },
+};
+
+function safeMsg(msg, cb) {
+  if (!ctxOk()) return;
+  try {
+    chrome.runtime.sendMessage(msg, cb || (() => { void chrome.runtime.lastError; }));
+  } catch (e) { /* context gone — silently ignore */ }
+}
+
 // ── Shared Helpers ───────────────────────────────────────────────────────────
 
 // Single selector for ALL job card types (regular + promoted/sponsored)
@@ -163,6 +189,7 @@ function cardMatchesLocation(card, locations) {
 // ── State ────────────────────────────────────────────────────────────────────
 
 let appliedJobsCache = {};
+let ignoredJobsCache = {};
 let expFilterEnabled = false;
 let expFilterMax = 2;
 let kwFilterEnabled = false;
@@ -209,6 +236,199 @@ function fullReset() {
   });
 }
 
+// ── Is card permanently ignored by user? ─────────────────────────────────────
+
+function getCardKey(card) {
+  const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+  const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+  const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "";
+  const company = companyEl ? companyEl.innerText.trim() : "";
+  return makeKey(company, title);
+}
+
+function isIgnored(card) {
+  const key = getCardKey(card);
+  return !!key && !!ignoredJobsCache[key];
+}
+
+// ── Inject "Not Interested" button on each card ───────────────────────────────
+
+function injectHideButtons() {
+  document.querySelectorAll(CARD_SELECTOR).forEach(card => {
+    if (card.dataset.nliHideBtnInjected) return;
+    card.dataset.nliHideBtnInjected = "true";
+
+    // Make card position:relative so button can be absolute
+    const pos = window.getComputedStyle(card).position;
+    if (pos === "static") card.style.position = "relative";
+
+    const btn = document.createElement("button");
+    btn.className = "nli-ignore-btn";
+    btn.title = "Not interested — hide permanently";
+    btn.innerHTML = "👎 Not Interested";
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      ignoreCard(card, btn);
+    });
+    card.appendChild(btn);
+  });
+}
+
+function ignoreCard(card, btn) {
+  const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+  const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+  const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "Unknown";
+  const company = companyEl ? companyEl.innerText.trim() : "Unknown";
+  const key = makeKey(company, title);
+  if (!key || key === "||") return;
+
+  const entry = { company, title, hiddenAt: new Date().toISOString() };
+  ignoredJobsCache[key] = entry;
+
+  safeStorage.set({ ignoredJobs: ignoredJobsCache }, () => {
+    card.style.display = "none";
+    showToast(`👎 Hidden: <b>${title}</b><br><span style="font-weight:400;font-size:12px">at ${company} — won't show again</span>`, "warning", 4000);
+    safeMsg({ action: "ignoredJobsUpdated" });
+  });
+}
+
+// Inject CSS for the button
+(function injectIgnoreStyle() {
+  if (document.getElementById("nli-ignore-style")) return;
+  const style = document.createElement("style");
+  style.id = "nli-ignore-style";
+  style.textContent = `
+    .nli-ignore-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      background: #fff;
+      color: #6b7280;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.08);
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .nli-ignore-btn:hover {
+      background: #fef2f2;
+      border-color: #fca5a5;
+      color: #dc2626;
+      box-shadow: 0 3px 10px rgba(220,38,38,.15);
+    }
+    .srp-jobtuple-wrapper:hover .nli-ignore-btn,
+    [class*="jobTuple"]:hover .nli-ignore-btn,
+    .srp-tuple:hover .nli-ignore-btn,
+    .cust-job-tuple:hover .nli-ignore-btn {
+      display: inline-flex;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+// ── "Not Interested" button on JOB DETAIL page ───────────────────────────────
+
+function injectDetailPageButton() {
+  if (!isJobDetailPage()) return;
+  if (document.getElementById("nli-detail-ignore-btn")) return;
+
+  // Find the header area where Save/Apply buttons live
+  const headerSelectors = [
+    '[class*="jd-header-content"]',
+    '[class*="jd-header"]',
+    '[class*="styles_jhc"]',
+    'div[class*="header-main"]',
+  ];
+  let anchor = null;
+  for (const sel of headerSelectors) {
+    anchor = document.querySelector(sel);
+    if (anchor) break;
+  }
+  // Fallback: insert after the h1 title
+  if (!anchor) anchor = document.querySelector('h1');
+  if (!anchor) return;
+
+  const company = extractCompanyName();
+  const position = extractJobPosition();
+  if (!company || !position) return;
+
+  const key = makeKey(company, position);
+  const alreadyIgnored = !!ignoredJobsCache[key];
+
+  const btn = document.createElement("button");
+  btn.id = "nli-detail-ignore-btn";
+  btn.innerHTML = alreadyIgnored ? "✅ Restored — showing again" : "👎 Not Interested";
+  btn.style.cssText = `
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 10px 0 0 0;
+    padding: 7px 16px;
+    background: ${alreadyIgnored ? "#f0fdf4" : "#fff"};
+    color: ${alreadyIgnored ? "#16a34a" : "#6b7280"};
+    border: 1.5px solid ${alreadyIgnored ? "#86efac" : "#e5e7eb"};
+    border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,.07);
+    transition: all .15s;
+  `;
+
+  btn.addEventListener("mouseenter", () => {
+    if (btn.dataset.ignored === "true") return;
+    btn.style.background = "#fef2f2";
+    btn.style.borderColor = "#fca5a5";
+    btn.style.color = "#dc2626";
+  });
+  btn.addEventListener("mouseleave", () => {
+    if (btn.dataset.ignored === "true") return;
+    btn.style.background = "#fff";
+    btn.style.borderColor = "#e5e7eb";
+    btn.style.color = "#6b7280";
+  });
+
+  btn.addEventListener("click", () => {
+    if (btn.dataset.ignored === "true") {
+      // Restore
+      delete ignoredJobsCache[key];
+      safeStorage.set({ ignoredJobs: ignoredJobsCache }, () => {
+        btn.dataset.ignored = "false";
+        btn.innerHTML = "👎 Not Interested";
+        btn.style.background = "#fff";
+        btn.style.borderColor = "#e5e7eb";
+        btn.style.color = "#6b7280";
+        showToast(`↩ Restored: <b>${position}</b> at <b>${company}</b>`, "success", 3000);
+        safeMsg({ action: "ignoredJobsUpdated" });
+      });
+    } else {
+      // Ignore
+      ignoredJobsCache[key] = { company, title: position, hiddenAt: new Date().toISOString() };
+      safeStorage.set({ ignoredJobs: ignoredJobsCache }, () => {
+        btn.dataset.ignored = "true";
+        btn.innerHTML = "✅ Hidden — click to restore";
+        btn.style.background = "#fffbeb";
+        btn.style.borderColor = "#fde68a";
+        btn.style.color = "#b45309";
+        showToast(`👎 Hidden: <b>${position}</b><br><span style="font-weight:400;font-size:12px">at ${company} — won't show again in listings</span>`, "warning", 4000);
+        safeMsg({ action: "ignoredJobsUpdated" });
+      });
+    }
+  });
+
+  btn.dataset.ignored = alreadyIgnored ? "true" : "false";
+  // Insert right after the anchor element
+  anchor.insertAdjacentElement("afterend", btn);
+}
+
 // ── Is card hidden by application history? ───────────────────────────────────
 
 function isHistoryHidden(card) {
@@ -224,6 +444,7 @@ function isHistoryHidden(card) {
 function shouldShow(card) {
   return (
     !isHistoryHidden(card) &&
+    !isIgnored(card) &&
     !(card.dataset.nliExpHidden === "true") &&
     !(card.dataset.nliKwHidden === "true") &&
     !(card.dataset.nliLocHidden === "true")
@@ -264,7 +485,7 @@ function applyExpFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "expFilterStatus", hiddenCount }); } catch (e) { }
+  safeMsg({ action: "expFilterStatus", hiddenCount });
 }
 
 // ── Filter: keyword ───────────────────────────────────────────────────────────
@@ -286,7 +507,7 @@ function applyKeywordFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "kwFilterStatus", hiddenCount }); } catch (e) { }
+  safeMsg({ action: "kwFilterStatus", hiddenCount });
 }
 
 // ── Filter: location ──────────────────────────────────────────────────────────
@@ -308,7 +529,7 @@ function applyLocationFilter() {
     syncDisplay(card);
   });
 
-  try { chrome.runtime.sendMessage({ action: "locFilterStatus", hiddenCount }); } catch (e) { }
+  safeMsg({ action: "locFilterStatus", hiddenCount });
 }
 
 // ── Run all filters ───────────────────────────────────────────────────────────
@@ -323,8 +544,9 @@ function runAllFilters() {
 // ── Storage bootstrap ─────────────────────────────────────────────────────────
 
 function loadFromStorage(callback) {
-  chrome.storage.local.get(["appliedJobs", "expFilter", "kwFilter", "locFilter", "autoSkip"], (result) => {
+  safeStorage.get(["appliedJobs", "ignoredJobs", "expFilter", "kwFilter", "locFilter", "autoSkip"], (result) => {
     appliedJobsCache = result.appliedJobs || {};
+    ignoredJobsCache = result.ignoredJobs || {};
 
     const ef = result.expFilter || { enabled: false, maxAllowed: 2 };
     expFilterEnabled = ef.enabled;
@@ -348,6 +570,22 @@ function loadFromStorage(callback) {
 
 // ── Auto-Skip helpers ─────────────────────────────────────────────────────────
 
+// ── Page type detection ───────────────────────────────────────────────────────
+
+function isJobDetailPage() {
+  // Job detail URLs: /job-listings-*, /jobdetail*, or contain sid= parameter with no pagination
+  const url = window.location.href;
+  return /naukri\.com\/job-listings-/.test(url) ||
+         /naukri\.com\/jobdetail/.test(url) ||
+         (/sid=/.test(url) && !/[?&]k=/.test(url));
+}
+
+function isSearchResultsPage() {
+  const url = window.location.href;
+  // Search results have ?k= or path like /cyber-jobs-12
+  return /[?&]k=/.test(url) || /naukri\.com\/[a-z-]+-jobs/.test(url);
+}
+
 function countVisibleCards() {
   let count = 0;
   document.querySelectorAll(CARD_SELECTOR).forEach(card => {
@@ -357,25 +595,40 @@ function countVisibleCards() {
 }
 
 function findNextPageButton() {
-  // Try standard Naukri "Next" anchor in pagination
+  // 1. Try aria-label first (most reliable)
+  const ariaNext = document.querySelector('a[aria-label="Next"], button[aria-label="Next"]');
+  if (ariaNext) return ariaNext;
+
+  // 2. Try class-based selectors Naukri uses
+  const classNext = document.querySelector(
+    'a.next, .next > a, [class*="nextBtn"], [class*="next-btn"], [class*="next_btn"], a[title="Next"]'
+  );
+  if (classNext) return classNext;
+
+  // 3. Scan pagination wrapper for an element whose text *contains* "next"
   const pagWrapper = document.querySelector(
-    '.pagination-wrapper, [class*="pagination"], .pages-list, .srp-pagination'
+    '.pagination-wrapper, [class*="pagination"], .pages-list, .srp-pagination, [class*="Pagination"]'
   );
   if (pagWrapper) {
-    const links = pagWrapper.querySelectorAll("a");
-    for (const a of links) {
-      if (/^next$/i.test(a.innerText.trim())) return a;
+    const links = pagWrapper.querySelectorAll("a, button, span");
+    for (const el of links) {
+      const txt = (el.innerText || el.textContent || "").toLowerCase().trim();
+      if (txt.includes("next")) return el;
     }
   }
-  // Fallback: any anchor with text "Next" on the page
-  for (const a of document.querySelectorAll("a")) {
-    if (/^next$/i.test(a.innerText.trim())) return a;
+
+  // 4. Last resort: any anchor/button on the page whose text contains "next"
+  for (const el of document.querySelectorAll("a, button")) {
+    const txt = (el.innerText || el.textContent || "").toLowerCase().trim();
+    if (txt.includes("next") && !txt.includes("previous") && txt.length < 12) return el;
   }
+
   return null;
 }
 
 function checkAutoSkip() {
-  if (!autoSkipEnabled || !storageReady) return;
+  // Never auto-skip on a job detail page — no cards exist there
+  if (!autoSkipEnabled || !storageReady || isJobDetailPage()) return;
   if (autoSkipTimer) clearTimeout(autoSkipTimer);
 
   autoSkipTimer = setTimeout(() => {
@@ -387,9 +640,9 @@ function checkAutoSkip() {
       const nextBtn = findNextPageButton();
       if (!nextBtn) {
         // No next page — end of results
-        chrome.storage.local.get(["autoSkipCount"], (r) => {
+        safeStorage.get(["autoSkipCount"], (r) => {
           const n = r.autoSkipCount || 0;
-          chrome.storage.local.set({ autoSkipCount: 0 });
+          safeStorage.set({ autoSkipCount: 0 });
           showToast(
             `🔍 Reached the last page. No matching jobs found${n > 0 ? ` after skipping <b>${n}</b> page${n !== 1 ? "s" : ""}` : ""}.`,
             "error", 7000
@@ -398,48 +651,55 @@ function checkAutoSkip() {
         return;
       }
       // Increment skip count and navigate
-      chrome.storage.local.get(["autoSkipCount"], (r) => {
+      safeStorage.get(["autoSkipCount"], (r) => {
         const newCount = (r.autoSkipCount || 0) + 1;
-        chrome.storage.local.set({ autoSkipCount: newCount }, () => {
+        safeStorage.set({ autoSkipCount: newCount }, () => {
           showToast(
             `⏭ Page has <b>0 matching jobs</b> — auto-skipping... (<b>${newCount}</b> page${newCount !== 1 ? "s" : ""} skipped)`,
             "warning", 1800
           );
-          setTimeout(() => nextBtn.click(), 1400);
+          setTimeout(() => nextBtn.click(), 800);
         });
       });
     } else {
       // Found matching jobs — check if we skipped any pages
-      chrome.storage.local.get(["autoSkipCount"], (r) => {
+      safeStorage.get(["autoSkipCount"], (r) => {
         const n = r.autoSkipCount || 0;
         if (n > 0) {
-          chrome.storage.local.set({ autoSkipCount: 0 });
+          safeStorage.set({ autoSkipCount: 0 });
           showToast(
             `✅ Found <b>${visible}</b> matching job${visible !== 1 ? "s" : ""}!<br><span style="font-weight:400;font-size:12px">Auto-skipped <b>${n}</b> empty page${n !== 1 ? "s" : ""} to get here.</span>`,
             "success", 6000
           );
           // Notify sidepanel to update skip count display
-          try { chrome.runtime.sendMessage({ action: "autoSkipResult", skipped: n, found: visible }); } catch (e) { }
+          safeMsg({ action: "autoSkipResult", skipped: n, found: visible });
         }
       });
     }
-  }, 1400); // Wait for all filters to settle before deciding
+  }, 2000); // Wait for all filters to settle before deciding
 }
 
 loadFromStorage(() => {
   fullReset();
   runAllFilters();
+  injectHideButtons();
+  injectDetailPageButton();
   checkAutoSkip();
 });
 
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.appliedJobs) {
-    appliedJobsCache = changes.appliedJobs.newValue || {};
-    fullReset();
-    runAllFilters();
-    checkAutoSkip();
-  }
-});
+if (ctxOk()) {
+  chrome.storage.onChanged.addListener((changes) => {
+    if (!ctxOk()) return;
+    if (changes.appliedJobs) {
+      appliedJobsCache = changes.appliedJobs.newValue || {};
+      fullReset(); runAllFilters(); injectHideButtons(); injectDetailPageButton(); checkAutoSkip();
+    }
+    if (changes.ignoredJobs) {
+      ignoredJobsCache = changes.ignoredJobs.newValue || {};
+      fullReset(); runAllFilters(); injectHideButtons(); injectDetailPageButton(); checkAutoSkip();
+    }
+  });
+}
 
 // ── MutationObserver (debounced) ──────────────────────────────────────────────
 
@@ -450,6 +710,9 @@ const observer = new MutationObserver(() => {
   _obsTimer = setTimeout(() => {
     _obsTimer = null;
     runAllFilters();
+    injectHideButtons();
+    injectDetailPageButton();
+    checkAutoSkip();
   }, 350);
 });
 observer.observe(document.body, { childList: true, subtree: true });
@@ -490,7 +753,7 @@ function openLinkedIn() {
   const position = extractJobPosition();
   if (!company) { showToast("No company name found. Please open a specific job listing.", "error"); return; }
   const url = window.location.href;
-  chrome.runtime.sendMessage({ action: "checkAndOpen", company, position, url }, (response) => {
+  safeMsg({ action: "checkAndOpen", company, position, url }, (response) => {
     if (response && response.alreadyApplied) {
       showToast(`Already searched/applied!<br><b>${position || "This role"}</b> at <b>${company}</b><br><span style="font-weight:400;opacity:.9;font-size:12px">First seen: ${response.firstSeen}</span>`, "warning", 8000);
     } else {
@@ -505,7 +768,9 @@ document.addEventListener("keydown", (e) => {
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
+if (ctxOk()) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!ctxOk()) return;
   if (message.action === "getCompany") {
     sendResponse({ company: extractCompanyName(), position: extractJobPosition() });
   }
@@ -524,6 +789,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       const reasons = [];
       if (isHistoryHidden(card)) reasons.push("Applied");
+      if (isIgnored(card)) reasons.push("Ignored");
       if (card.dataset.nliExpHidden === "true") reasons.push("Experience");
       if (card.dataset.nliKwHidden === "true") reasons.push("Keywords");
       if (card.dataset.nliLocHidden === "true") reasons.push("Location");
@@ -588,11 +854,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "autoSkipChanged") {
     autoSkipEnabled = message.enabled;
     if (!autoSkipEnabled) {
-      // Reset counter when user disables auto-skip
-      chrome.storage.local.set({ autoSkipCount: 0 });
+      safeStorage.set({ autoSkipCount: 0 });
       if (autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
     } else {
       checkAutoSkip();
     }
   }
+
+  // Sidepanel requests full ignored jobs list (from storage, not just current page)
+  if (message.action === "getIgnoredList") {
+    safeStorage.get(["ignoredJobs"], (r) => {
+      const cache = r.ignoredJobs || {};
+      const list = Object.entries(cache).map(([key, val]) => ({
+        key,
+        company: val.company || "",
+        title: val.title || "",
+        hiddenAt: val.hiddenAt || null,
+      }));
+      list.sort((a, b) => (b.hiddenAt || "").localeCompare(a.hiddenAt || ""));
+      sendResponse({ list });
+    });
+    return true;
+  }
+
+  // Restore a single ignored job
+  if (message.action === "restoreIgnored") {
+    safeStorage.get(["ignoredJobs"], (r) => {
+      const cache = r.ignoredJobs || {};
+      delete cache[message.key];
+      ignoredJobsCache = cache;
+      safeStorage.set({ ignoredJobs: cache }, () => {
+        // Show any matching card on current page
+        document.querySelectorAll(CARD_SELECTOR).forEach(card => {
+          if (getCardKey(card) === message.key) {
+            delete card.dataset.nliChecked;
+            syncDisplay(card);
+          }
+        });
+        sendResponse({ ok: true });
+      });
+    });
+    return true;
+  }
+
+  // Clear all ignored jobs
+  if (message.action === "clearIgnored") {
+    ignoredJobsCache = {};
+    safeStorage.set({ ignoredJobs: {} }, () => {
+      fullReset();
+      runAllFilters();
+      injectHideButtons();
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
 });
+} // end if(ctxOk())
