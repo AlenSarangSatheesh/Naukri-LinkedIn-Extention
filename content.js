@@ -272,8 +272,9 @@ let storageReady = false;
 // ── Auto-Skip state ───────────────────────────────────────────────────────────
 let autoSkipEnabled = false;
 let autoSkipTimer = null;
+let foundJobsAlerted = false; // Tracks if we've already chimed on this page
 
-// ── Toast ────────────────────────────────────────────────────────────────────
+// ── Toast & Audio ─────────────────────────────────────────────────────────────
 
 function showToast(message, type = "success", duration = 4000) {
   const existing = document.getElementById("nli-toast");
@@ -291,6 +292,36 @@ function showToast(message, type = "success", duration = 4000) {
     toast.style.animation = "nliOut .3s ease forwards";
     setTimeout(() => toast.remove(), 300);
   }, duration);
+}
+
+// Synthesizes a pleasant notification chime directly in the browser
+function playNotificationSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    // Creates a double-tone "ding" sound
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {
+    console.log("[NaukriLinkedIn] 🔇 Could not play sound:", e);
+  }
 }
 
 // ── Full reset ───────────────────────────────────────────────────────────────
@@ -415,21 +446,28 @@ function injectDetailPageButton() {
   if (!isJobDetailPage()) return;
   if (document.getElementById("nli-detail-ignore-btn")) return;
 
-  // Find the header area where Save/Apply buttons live
-  const headerSelectors = [
-    '[class*="jd-header-content"]',
-    '[class*="jd-header"]',
-    '[class*="styles_jhc"]',
-    'div[class*="header-main"]',
-  ];
-  let anchor = null;
-  for (const sel of headerSelectors) {
-    anchor = document.querySelector(sel);
-    if (anchor) break;
+  // Find the exact container that holds the "Save" and "Apply" buttons
+  const allButtons = Array.from(document.querySelectorAll('button'));
+  const saveBtn = allButtons.find(b => b.innerText && b.innerText.trim() === 'Save');
+  const applyBtn = document.getElementById('apply-button') || allButtons.find(b => b.innerText && b.innerText.trim() === 'Apply');
+
+  let targetContainer = null;
+  if (saveBtn) targetContainer = saveBtn.parentElement;
+  else if (applyBtn) targetContainer = applyBtn.parentElement;
+  else {
+    // Fallback if buttons haven't loaded yet
+    const fallbackSelectors = [
+      '[class*="styles_jhc__btn-container"]',
+      '[class*="styles_buttons"]',
+      '[class*="jd-header-content"]',
+    ];
+    for (const sel of fallbackSelectors) {
+      targetContainer = document.querySelector(sel);
+      if (targetContainer) break;
+    }
   }
-  // Fallback: insert after the h1 title
-  if (!anchor) anchor = document.querySelector('h1');
-  if (!anchor) return;
+
+  if (!targetContainer) return;
 
   const company = extractCompanyName();
   const position = extractJobPosition();
@@ -440,33 +478,31 @@ function injectDetailPageButton() {
 
   const btn = document.createElement("button");
   btn.id = "nli-detail-ignore-btn";
-  btn.innerHTML = alreadyIgnored ? "✅ Restored — showing again" : "👎 Not Interested";
+  btn.innerHTML = alreadyIgnored ? "✅ Restored" : "👎 Not Interested";
+
+  // Styling to match Naukri's native rounded "Save" button
   btn.style.cssText = `
-    display: inline-flex; align-items: center; gap: 6px;
-    margin: 10px 0 0 0;
-    padding: 7px 16px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    margin-right: 12px;
+    padding: 0 20px;
+    height: 45px;
     background: ${alreadyIgnored ? "#f0fdf4" : "#fff"};
-    color: ${alreadyIgnored ? "#16a34a" : "#6b7280"};
-    border: 1.5px solid ${alreadyIgnored ? "#86efac" : "#e5e7eb"};
-    border-radius: 20px;
-    font-size: 13px; font-weight: 600;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: ${alreadyIgnored ? "#16a34a" : "#dc2626"};
+    border: 1px solid ${alreadyIgnored ? "#86efac" : "#dc2626"};
+    border-radius: 94px; /* matches naukri pill shape */
+    font-size: 14px; font-weight: 700;
+    font-family: inherit;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0,0,0,.07);
     transition: all .15s;
   `;
 
   btn.addEventListener("mouseenter", () => {
     if (btn.dataset.ignored === "true") return;
-    btn.style.background = "#fef2f2";
-    btn.style.borderColor = "#fca5a5";
-    btn.style.color = "#dc2626";
+    btn.style.background = "#fff1f2";
   });
   btn.addEventListener("mouseleave", () => {
     if (btn.dataset.ignored === "true") return;
     btn.style.background = "#fff";
-    btn.style.borderColor = "#e5e7eb";
-    btn.style.color = "#6b7280";
   });
 
   btn.addEventListener("click", () => {
@@ -477,8 +513,8 @@ function injectDetailPageButton() {
         btn.dataset.ignored = "false";
         btn.innerHTML = "👎 Not Interested";
         btn.style.background = "#fff";
-        btn.style.borderColor = "#e5e7eb";
-        btn.style.color = "#6b7280";
+        btn.style.borderColor = "#dc2626";
+        btn.style.color = "#dc2626";
         showToast(`↩ Restored: <b>${position}</b> at <b>${company}</b>`, "success", 3000);
         safeMsg({ action: "ignoredJobsUpdated" });
       });
@@ -487,10 +523,10 @@ function injectDetailPageButton() {
       ignoredJobsCache[key] = { company, title: position, hiddenAt: new Date().toISOString() };
       safeStorage.set({ ignoredJobs: ignoredJobsCache }, () => {
         btn.dataset.ignored = "true";
-        btn.innerHTML = "✅ Hidden — click to restore";
-        btn.style.background = "#fffbeb";
-        btn.style.borderColor = "#fde68a";
-        btn.style.color = "#b45309";
+        btn.innerHTML = "✅ Restored";
+        btn.style.background = "#f0fdf4";
+        btn.style.borderColor = "#86efac";
+        btn.style.color = "#16a34a";
         showToast(`👎 Hidden: <b>${position}</b><br><span style="font-weight:400;font-size:12px">at ${company} — won't show again in listings</span>`, "warning", 4000);
         safeMsg({ action: "ignoredJobsUpdated" });
       });
@@ -498,8 +534,13 @@ function injectDetailPageButton() {
   });
 
   btn.dataset.ignored = alreadyIgnored ? "true" : "false";
-  // Insert right after the anchor element
-  anchor.insertAdjacentElement("afterend", btn);
+
+  // Insert before the Save button if it exists, otherwise prepend to the container
+  if (saveBtn && targetContainer === saveBtn.parentElement) {
+    targetContainer.insertBefore(btn, saveBtn);
+  } else {
+    targetContainer.prepend(btn);
+  }
 }
 
 // ── Is card hidden by application history? ───────────────────────────────────
@@ -791,7 +832,6 @@ function checkAutoSkip() {
 
   if (autoSkipTimer) return;
 
-  // Reduced delay from 3000ms to 800ms
   autoSkipTimer = setTimeout(() => {
     autoSkipTimer = null;
     if (!autoSkipEnabled) return;
@@ -820,7 +860,6 @@ function checkAutoSkip() {
         const newCount = (r.autoSkipCount || 0) + 1;
         safeStorage.set({ autoSkipCount: newCount }, () => {
           showToast(`⏭ Auto-skipping filtered page (${newCount} skipped)`, "warning", 1500);
-          // Reduced delay before clicking next from 1000ms to 150ms
           setTimeout(() => {
             try {
               console.log("[NaukriLinkedIn] 🚀 Clicking Next button:", nextBtn);
@@ -843,10 +882,19 @@ function checkAutoSkip() {
         const newCount = (r.autoSkipCount || 0) + 1;
         safeStorage.set({ autoSkipCount: newCount }, () => {
           showToast(`⏭ Auto-skipping empty page (${newCount} skipped)`, "warning", 1500);
-          // Reduced delay before clicking next from 1000ms to 150ms
           setTimeout(() => { try { nextBtn.click(); } catch (e) { if (nextBtn.href) window.location.href = nextBtn.href; } }, 150);
         });
       });
+    } else if (visible > 0) {
+      // We found jobs! Stop skipping and alert the user.
+      if (isLoading) return;
+
+      if (!foundJobsAlerted) {
+        console.log("[NaukriLinkedIn] 🔔 Jobs found! Playing alert sound.");
+        playNotificationSound();
+        foundJobsAlerted = true;
+        showToast("🔔 <b>Jobs Found!</b><br>Auto-skip paused for your review.", "success", 6000);
+      }
     }
   }, 800);
 }
@@ -859,10 +907,15 @@ function checkUrlChange() {
   if (currentUrl !== lastKnownUrl) {
     console.log("[NaukriLinkedIn] 📍 URL Change detected (SPA):", currentUrl);
     lastKnownUrl = currentUrl;
+
+    // Reset the audio alert tracker so it can chime on the new page
+    foundJobsAlerted = false;
+
     runAllFilters();
     injectHideButtons();
+    injectDetailPageButton(); // Always try to inject on page change
+
     chrome.storage.local.get(["scannerActive"], (r) => {
-      // Just check Auto-Skip on SPA change
       checkAutoSkip();
     });
   }
@@ -909,6 +962,7 @@ const observer = new MutationObserver((mutations) => {
   if (hasNewCards) runAllFilters();
 
   injectHideButtons();
+  injectDetailPageButton(); // Catch delayed loads on detail pages
   checkAutoSkip();
 });
 observer.observe(document.body, { childList: true, subtree: true });
