@@ -880,8 +880,18 @@ loadFromStorage(() => {
 if (ctxOk()) {
   chrome.storage.onChanged.addListener((changes) => {
     if (!ctxOk()) return;
-    if (changes.appliedJobs) { appliedJobsCache = changes.appliedJobs.newValue || {}; fullReset(); runAllFilters(); }
-    if (changes.ignoredJobs) { ignoredJobsCache = changes.ignoredJobs.newValue || {}; fullReset(); runAllFilters(); }
+    if (changes.appliedJobs) {
+      appliedJobsCache = changes.appliedJobs.newValue || {};
+      fullReset();
+      runAllFilters();
+      checkAutoSkip();
+    }
+    if (changes.ignoredJobs) {
+      ignoredJobsCache = changes.ignoredJobs.newValue || {};
+      fullReset();
+      runAllFilters();
+      checkAutoSkip();
+    }
   });
 }
 
