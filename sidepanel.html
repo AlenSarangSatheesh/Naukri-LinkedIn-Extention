@@ -252,6 +252,15 @@
       background: #d97706;
     }
 
+    .toggle-wrap.red input:checked+.toggle-track {
+      background: #dc2626;
+    }
+
+    .filter-card.active-red {
+      border-color: #dc2626;
+      background: #fff1f2;
+    }
+
     .filter-card.active-orange {
       border-color: #d97706;
       background: #fffbeb;
@@ -401,6 +410,49 @@
 
     .loc-tag .tag-pill-del {
       color: #2dd4bf;
+    }
+
+    /* Keyword exclude pill (red/rose) */
+    .kwx-tag {
+      background: #fff1f2;
+      border: 1.5px solid #fecaca;
+      color: #dc2626;
+    }
+
+    .kwx-tag.custom {
+      border-color: #dc2626;
+    }
+
+    .kwx-tag .tag-pill-del {
+      color: #f87171;
+    }
+
+    .filter-status.red {
+      color: #dc2626;
+      background: #fff1f2;
+    }
+
+    .preset-chip.red {
+      border: 1.5px dashed #fecaca;
+      color: #dc2626;
+      background: var(--white);
+    }
+
+    .preset-chip.red:hover {
+      background: #fff1f2;
+      border-style: solid;
+    }
+
+    .tag-input.red:focus {
+      border-color: #dc2626;
+    }
+
+    .tag-add-btn.red {
+      background: #dc2626;
+    }
+
+    .tag-add-btn.red:hover {
+      background: #b91c1c;
     }
 
     /* Tags area */
@@ -837,25 +889,6 @@
       color: #c2410c;
       border: 1px solid #fed7aa;
     }
-
-    /* Restore button */
-    .restore-btn {
-      font-size: 11px;
-      color: var(--green);
-      background: #f0fdf4;
-      border: 1.5px solid #86efac;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 600;
-      padding: 4px 10px;
-      transition: all .15s;
-      margin-top: 6px;
-      display: inline-block;
-    }
-    .restore-btn:hover {
-      background: var(--green);
-      color: white;
-    }
   </style>
 </head>
 
@@ -876,6 +909,7 @@
 
   <div class="tabs">
     <div class="tab active" data-tab="filters">⚡ Filters</div>
+
     <div class="tab" data-tab="search">🔗 Search</div>
     <div class="tab" data-tab="hidden">🚫 Hidden</div>
     <div class="tab" data-tab="ignored">⛔ Ignored</div>
@@ -946,6 +980,41 @@
 
     <div class="divider"></div>
 
+    <!-- Keyword Exclude -->
+    <div class="section-label">Keyword Exclude Filter</div>
+    <div class="filter-card" id="kwx-filter-card">
+      <div class="filter-card-top">
+        <div class="filter-card-info">
+          <div class="filter-card-name">Hide jobs with these keywords</div>
+          <div class="filter-card-desc">Hides cards matching <b>any</b> of the exclude keywords</div>
+        </div>
+        <label class="toggle-wrap red">
+          <input type="checkbox" id="chk-kwx-filter" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div id="kwx-tags-area" class="tags-area">
+        <span class="tags-empty">No exclude keywords yet — type below to add</span>
+      </div>
+
+      <div class="tag-add-row">
+        <input class="tag-input red" id="kwx-input" type="text"
+          placeholder="Add keyword to exclude e.g. intern, trainee…" maxlength="60" />
+        <button class="tag-add-btn red" id="kwx-add-btn">Add</button>
+      </div>
+
+      <div class="presets-label">🚫 Common excludes — click to add:</div>
+      <div class="presets-row" id="kwx-presets"></div>
+
+      <div class="filter-hint" style="margin-top:10px">
+        Jobs matching <b>any</b> of these keywords in title, description, or tags will be <b>hidden</b>.
+      </div>
+      <div class="filter-status off" id="kwx-status"><span>⬤</span> <span id="kwx-status-text">Filter off</span></div>
+    </div>
+
+    <div class="divider"></div>
+
     <!-- Location -->
     <div class="section-label">Location Filter</div>
     <div class="filter-card" id="loc-filter-card">
@@ -997,14 +1066,21 @@
         </label>
       </div>
       <div class="filter-hint" style="margin-top:10px">
-        No more wasting clicks on pages with <b>0 matching jobs</b>. Stops when it finds matches or reaches the last page.
+        No more wasting clicks on pages with <b>0 matching jobs</b>. Stops when it finds matches or reaches the last
+        page.
       </div>
-      <div id="autoskip-status-row" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px">
-        <div class="filter-status off" id="autoskip-status"><span>⬤</span> <span id="autoskip-status-text">Auto-skip off</span></div>
-        <button id="autoskip-reset-btn" style="display:none;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer;padding:3px 8px;font-weight:600">Reset counter</button>
+      <div id="autoskip-status-row"
+        style="display:flex;align-items:center;justify-content:space-between;margin-top:9px">
+        <div class="filter-status off" id="autoskip-status"><span>⬤</span> <span id="autoskip-status-text">Auto-skip
+            off</span></div>
+        <button id="autoskip-reset-btn"
+          style="display:none;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer;padding:3px 8px;font-weight:600">Reset
+          counter</button>
       </div>
     </div>
   </div>
+
+
 
   <!-- ── Tab: Search ── -->
   <div class="tab-content" id="tab-search">
@@ -1053,7 +1129,8 @@
       <button class="clear-btn" id="clearIgnoredBtn">Clear all</button>
     </div>
     <div class="info-box" style="margin-top:0;margin-bottom:10px;border-color:#fde68a;background:#fffbeb;">
-      💡 Jobs you dismissed with <b>👎 Not Interested</b>. They stay hidden across all pages &amp; sessions. Click <b>Restore</b> to bring one back.
+      💡 Jobs you dismissed with <b>👎 Not Interested</b>. They stay hidden across all pages &amp; sessions. Click
+      <b>Restore</b> to bring one back.
     </div>
     <div id="ignoredList">
       <div class="empty-state">

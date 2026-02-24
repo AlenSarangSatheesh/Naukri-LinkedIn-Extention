@@ -12,6 +12,16 @@ const DEFAULT_LOCATIONS = [
   "thiruvananthapuram", "mangalore", "mysore", "kerala",
 ];
 
+// ── Auto-Skip reset ──────────────────────────────────────────────────────────
+document.getElementById("autoskip-reset-btn").addEventListener("click", () => {
+  chrome.storage.local.set({ autoSkipCount: 0 }, () => {
+    sendToTab("resetAutoSkip", {});
+    updateAutoSkipStatus();
+  });
+});
+
+
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
@@ -19,6 +29,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
     tab.classList.add("active");
     document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+
     if (tab.dataset.tab === "history") loadHistory();
     if (tab.dataset.tab === "hidden") loadHiddenJobs();
     if (tab.dataset.tab === "ignored") loadIgnoredJobs();
@@ -93,7 +104,7 @@ function broadcastExp() {
 // Builds keyword-style and location-style filter UIs from shared logic.
 
 function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, statusId, statusTxId, cardId,
-  filterAction, activeClass, pillClass, presets, emptyText, msgAction, defaultItems }) {
+  filterAction, activeClass, pillClass, presets, emptyText, msgAction, defaultItems, itemKey = "keywords" }) {
 
   const tagsArea = document.getElementById(tagsAreaId);
   const input = document.getElementById(inputId);
@@ -111,11 +122,10 @@ function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, s
 
   // Load
   chrome.storage.local.get([storageKey], (r) => {
-    const itemKey = filterAction === "kwFilterChanged" ? "keywords" : "cities";
     const defaults = defaultItems || [];
     const s = r[storageKey] || { enabled: defaults.length > 0, [itemKey]: defaults };
     enabled = s.enabled;
-    items = (s.keywords || s.cities || []).slice();
+    items = (s[itemKey] || []).slice();
     if (items.length === 0 && defaults.length > 0) { items = defaults.slice(); enabled = true; }
     toggle.checked = enabled;
     applyCardState();
@@ -179,7 +189,8 @@ function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, s
     presets.forEach(preset => {
       const k = preset.toLowerCase();
       const chip = document.createElement("span");
-      chip.className = `preset-chip ${pillClass.includes("kw") ? "purple" : "teal"}${items.includes(k) ? " added" : ""}`;
+      const colorClass = pillClass.includes("kwx") ? "red" : (pillClass.includes("kw") ? "purple" : "teal");
+      chip.className = `preset-chip ${colorClass}${items.includes(k) ? " added" : ""}`;
       chip.textContent = preset;
       chip.title = items.includes(k) ? "Already added" : "Click to add";
       chip.addEventListener("click", () => addItem(k));
@@ -192,6 +203,7 @@ function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, s
     statusEl.classList.toggle("off", !enabled);
     if (activeClass === "active-teal") statusEl.classList.toggle("teal", enabled);
     if (activeClass === "active-purple") statusEl.classList.toggle("purple", enabled);
+    if (activeClass === "active-red") statusEl.classList.toggle("red", enabled);
     updateStatus(null);
   }
 
@@ -202,8 +214,7 @@ function makeTagFilter({ storageKey, tagsAreaId, inputId, addBtnId, presetsId, s
   }
 
   function broadcast() {
-    const key = filterAction === "kwFilterChanged" ? "keywords" : "cities";
-    const payload = { enabled, [key]: items };
+    const payload = { enabled, [itemKey]: items };
     chrome.storage.local.set({ [storageKey]: payload }, () =>
       sendToTab(filterAction, payload)
     );
@@ -230,6 +241,23 @@ const kwFilter = makeTagFilter({
   emptyText: "No keywords yet — add from presets or type below",
 });
 
+// ── Build keyword exclude filter ──────────────────────────────────────────────
+const kwxFilter = makeTagFilter({
+  storageKey: "kwExcludeFilter",
+  tagsAreaId: "kwx-tags-area",
+  inputId: "kwx-input",
+  addBtnId: "kwx-add-btn",
+  presetsId: "kwx-presets",
+  statusId: "kwx-status",
+  statusTxId: "kwx-status-text",
+  cardId: "kwx-filter-card",
+  filterAction: "kwExcludeFilterChanged",
+  activeClass: "active-red",
+  pillClass: "kwx-tag",
+  presets: [],
+  emptyText: "No exclude keywords yet — type below to add",
+});
+
 // ── Build location filter ─────────────────────────────────────────────────────
 const locFilter = makeTagFilter({
   storageKey: "locFilter",
@@ -246,6 +274,7 @@ const locFilter = makeTagFilter({
   presets: PRESET_LOCATIONS,
   emptyText: "No locations yet — type below to add",
   defaultItems: DEFAULT_LOCATIONS,
+  itemKey: "cities",
 });
 
 // ── Listen for status updates from content script ─────────────────────────────
@@ -256,8 +285,9 @@ chrome.runtime.onMessage.addListener((message) => {
       : "Filter active — 0 hidden";
   }
   if (message.action === "kwFilterStatus") kwFilter.updateStatus(message.hiddenCount);
+  if (message.action === "kwExcludeFilterStatus") kwxFilter.updateStatus(message.hiddenCount);
   if (message.action === "locFilterStatus") locFilter.updateStatus(message.hiddenCount);
-  if (message.action === "autoSkipResult") updateAutoSkipStatus();
+
 });
 
 // ── Auto-Skip Filter ──────────────────────────────────────────────────────────

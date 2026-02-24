@@ -44,23 +44,18 @@ function parseMinExperience(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
   if (t.includes("fresher") || t === "0" || t === "0 yrs" || t === "0-1 yrs") return 0;
-  // "5-10 Yrs", "5 - 10 Yrs", "5–10 Yrs"
   const rangeMatch = t.match(/(\d+)\s*[-–—]\s*\d+\s*(?:yr|year)/i);
   if (rangeMatch) return parseInt(rangeMatch[1], 10);
-  // "5+ Yrs"
   const plusMatch = t.match(/(\d+)\s*\+\s*(?:yr|year)?/i);
   if (plusMatch) return parseInt(plusMatch[1], 10);
-  // "5 Yrs", "5 Years"
   const singleMatch = t.match(/(\d+)\s*(?:yr|year)/i);
   if (singleMatch) return parseInt(singleMatch[1], 10);
-  // plain number at start
   const numMatch = t.match(/^(\d+)/);
   if (numMatch) return parseInt(numMatch[1], 10);
   return null;
 }
 
 function getCardMinExp(card) {
-  // 1. Try specific selectors first (fastest)
   const selectors = [
     'span.expwdth', 'span[class*="expwdth"]',
     'span[class*="exp"] span[title]',
@@ -76,8 +71,6 @@ function getCardMinExp(card) {
       if (minExp !== null) return minExp;
     }
   }
-
-  // 2. Scan all spans/small elements for text containing "Yr" or "Year"
   const candidates = card.querySelectorAll('span, li, div.row2, div.row3');
   for (const el of candidates) {
     const txt = (el.getAttribute("title") || el.innerText || "").trim();
@@ -86,8 +79,6 @@ function getCardMinExp(card) {
       if (minExp !== null) return minExp;
     }
   }
-
-  // 3. Final fallback: regex scan the entire card text
   const fullText = card.innerText || "";
   const expPattern = fullText.match(/(\d+\s*[-–—]\s*\d+\s*(?:Yrs?|Years?))/i)
     || fullText.match(/(\d+\s*\+?\s*(?:Yrs?|Years?))/i);
@@ -95,56 +86,119 @@ function getCardMinExp(card) {
     const minExp = parseMinExperience(expPattern[1]);
     if (minExp !== null) return minExp;
   }
-
   return null;
 }
 
-// ── Card text extraction (title + description + skills/tags) ─────────────────
+// ── Card text extraction ──────────────────────────────────────────────────────
 
 function getCardSearchText(card) {
   const parts = [];
-
-  // 1. Job title — row1 or row2 area
-  const titleEl = card.querySelector(
-    'a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a'
-  );
+  const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
   if (titleEl) parts.push(titleEl.innerText || titleEl.getAttribute("title") || "");
-
-  // 2. Job description — row4: span with class containing "job-desc" or "srp-description"
-  const descEl = card.querySelector(
-    'span[class*="job-desc"], span[class*="srp-description"], .row4 span, div.row4'
-  );
+  const descEl = card.querySelector('span[class*="job-desc"], span[class*="srp-description"], .row4 span, div.row4');
   if (descEl) parts.push(descEl.innerText || "");
-
-  // 3. Skills / tags — row5 contains the skill pills
-  //    DOM: div.row5 > a or span tags with skill names separated by bullets
   const row5 = card.querySelector('.row5, div[class=" row5"]');
   if (row5) parts.push(row5.innerText || "");
-
-  // 4. Fallback: also grab any explicit tag/skill elements anywhere in card
-  card.querySelectorAll(
-    '[class*="tag"], [class*="skill"], [class*="chip"], li.tag, .tags li, [class*="label"]'
-  ).forEach(el => parts.push(el.innerText || ""));
-
+  card.querySelectorAll('[class*="tag"], [class*="skill"], [class*="chip"], li.tag, .tags li, [class*="label"]').forEach(el => parts.push(el.innerText || ""));
   return parts.join(" ").toLowerCase();
 }
 
-// ── Card location extraction ──────────────────────────────────────────────────
-
 function getCardLocation(card) {
-  // Primary: span.locWidth has title="Bengaluru, Mumbai, New Delhi "
-  const locEl = card.querySelector(
-    'span.locWidth, span[class*="locWidth"], span[class*="loc"] span[title]'
-  );
-  if (locEl) {
-    const title = locEl.getAttribute("title") || locEl.innerText || "";
-    return title.toLowerCase();
-  }
-  // Fallback: any location-ish span
-  const fallback = card.querySelector(
-    '[class*="location"], [class*="loc-wrap"] span, span[title*="Remote"]'
-  );
+  const locEl = card.querySelector('span.locWidth, span[class*="locWidth"], span[class*="loc"] span[title]');
+  if (locEl) return (locEl.getAttribute("title") || locEl.innerText || "").toLowerCase();
+  const fallback = card.querySelector('[class*="location"], [class*="loc-wrap"] span, span[title*="Remote"]');
   return fallback ? (fallback.getAttribute("title") || fallback.innerText || "").toLowerCase() : "";
+}
+
+// ── Page type detection ───────────────────────────────────────────────────────
+
+function isSearchResultsPage() {
+  const url = window.location.href.toLowerCase();
+  return url.includes("naukri.com") && (
+    url.includes("-jobs") ||
+    url.includes("search-") ||
+    url.includes("q=") ||
+    url.includes("/jobs-") ||
+    /[?&]k=/.test(url)
+  );
+}
+
+function isJobDetailPage() {
+  const url = window.location.href.toLowerCase();
+  return url.includes("naukri.com") && (
+    url.includes("-jd-") ||
+    url.includes("/job-listings-") ||
+    url.includes("/jobdetail") ||
+    (/sid=/.test(url) && !/[?&]k=/.test(url))
+  );
+}
+
+// ── Pagination Helper ──────────────────────────────────────────────────────────
+
+function findNextPageButton() {
+  const specialized = [
+    'a.styles_btn-next__zms_i', // Modern v3
+    'a[class*="styles_btn-next"]',
+    'a[class*="btn-next"]',
+    'a.next-btn',
+    'a[rel="next"]',
+    '.pagination-container .next',
+    '.pagination .next',
+    'a.styles_btn-next',
+    '.styles_btn-next'
+  ];
+  for (const sel of specialized) {
+    const btn = document.querySelector(sel);
+    if (btn && !btn.classList.contains('disabled')) return btn;
+  }
+
+  // Deep search in pagination components
+  const pagContainers = document.querySelectorAll('.pagination, [class*="pagination"], .styles_pages');
+  for (const pag of pagContainers) {
+    const links = pag.querySelectorAll('a, button');
+    for (const a of links) {
+      const txt = a.innerText.toLowerCase();
+      // Match "Next", "Next >", ">", etc.
+      if (txt.includes("next") || txt === ">" || txt.includes("»") || a.querySelector('[class*="next"]') || a.querySelector('[class*="icon-next"]')) {
+        const isSelfDisabled = a.classList.contains('disabled') || a.hasAttribute('disabled');
+        const isParentDisabled = a.parentElement?.classList.contains('disabled');
+        if (!isSelfDisabled && !isParentDisabled) return a;
+      }
+    }
+  }
+  return null;
+}
+
+// ── Meta extraction for Detail Page ──────────────────────────────────────────
+
+function extractCompanyName() {
+  const selectors = [
+    'div[class*="styles_jd-header-comp-name"] a',
+    '[class*="jd-header-comp-name"] a',
+    'a[href*="-jobs-careers-"]',
+    'a[title*="Careers"]',
+    '.companyName'
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el) return (el.innerText?.trim() || el.getAttribute("title")?.replace(" Careers", "").trim());
+  }
+  return null;
+}
+
+function extractJobPosition() {
+  const selectors = [
+    'h1[class*="styles_jd-header-title"]',
+    'h1[class*="jd-header-title"]',
+    '[class*="jd-header-title"] h1',
+    '[class*="jd-header-title"]',
+    'h1'
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el) return el.innerText?.trim();
+  }
+  return null;
 }
 
 // ── Keyword matching (title + description + tags) ────────────────────────────
@@ -163,6 +217,21 @@ function cardMatchesKeywords(card, keywords) {
         `(?<![a-z0-9])${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`, "i"
       ).test(haystack);
     } catch { return haystack.includes(k); }
+  });
+}
+
+// ── Keyword exclude matching ──────────────────────────────────────────────────
+
+function cardMatchesExcludeKeywords(card, keywords) {
+  if (!keywords || keywords.length === 0) return false;
+  const haystack = getCardSearchText(card);
+  if (!haystack.trim()) return false;
+
+  return keywords.some(kw => {
+    const k = kw.toLowerCase().trim();
+    if (!k) return false;
+    // Substring match for exclusions — if "tele" is in "telecalling", hide it.
+    return haystack.includes(k);
   });
 }
 
@@ -194,6 +263,8 @@ let expFilterEnabled = false;
 let expFilterMax = 2;
 let kwFilterEnabled = false;
 let kwFilterKeywords = [];
+let kwExcludeEnabled = false;
+let kwExcludeKeywords = [];
 let locFilterEnabled = false;
 let locFilterCities = [];
 let storageReady = false;
@@ -256,6 +327,8 @@ function isIgnored(card) {
 function injectHideButtons() {
   document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (card.dataset.nliHideBtnInjected) return;
+    // Skip nested matches — only inject on the outermost card element
+    if (card.parentElement && card.parentElement.closest(CARD_SELECTOR)) return;
     card.dataset.nliHideBtnInjected = "true";
 
     // Make card position:relative so button can be absolute
@@ -492,22 +565,35 @@ function applyExpFilter() {
 
 function applyKeywordFilter() {
   if (!storageReady) return;
-  let hiddenCount = 0;
+  let hiddenIncludeCount = 0;
+  let hiddenExcludeCount = 0;
 
   document.querySelectorAll(CARD_SELECTOR).forEach(card => {
     if (isHistoryHidden(card)) return;
     if (card.dataset.nliKwChecked === "true") {
-      if (card.dataset.nliKwHidden === "true") hiddenCount++;
+      if (card.dataset.nliKwHidden === "true") {
+        // We need to re-evaluate to know WHY it was hidden for counts
+        const includeMatches = !kwFilterEnabled || cardMatchesKeywords(card, kwFilterKeywords);
+        const excludeMatches = kwExcludeEnabled && cardMatchesExcludeKeywords(card, kwExcludeKeywords);
+        if (!includeMatches) hiddenIncludeCount++;
+        else if (excludeMatches) hiddenExcludeCount++;
+      }
       return;
     }
     card.dataset.nliKwChecked = "true";
-    const matches = !kwFilterEnabled || cardMatchesKeywords(card, kwFilterKeywords);
-    card.dataset.nliKwHidden = matches ? "false" : "true";
-    if (!matches) hiddenCount++;
+    const includeMatches = !kwFilterEnabled || cardMatchesKeywords(card, kwFilterKeywords);
+    const excludeMatches = kwExcludeEnabled && cardMatchesExcludeKeywords(card, kwExcludeKeywords);
+    const hide = !includeMatches || excludeMatches;
+
+    if (!includeMatches) hiddenIncludeCount++;
+    else if (excludeMatches) hiddenExcludeCount++;
+
+    card.dataset.nliKwHidden = hide ? "true" : "false";
     syncDisplay(card);
   });
 
-  safeMsg({ action: "kwFilterStatus", hiddenCount });
+  safeMsg({ action: "kwFilterStatus", hiddenCount: hiddenIncludeCount });
+  safeMsg({ action: "kwExcludeFilterStatus", hiddenCount: hiddenExcludeCount });
 }
 
 // ── Filter: location ──────────────────────────────────────────────────────────
@@ -541,10 +627,130 @@ function runAllFilters() {
   applyLocationFilter();
 }
 
+// ── Deep Scanner logic ────────────────────────────────────────────────────────
+
+let lastScannedUrl = "";
+let scannerRetries = 0;
+
+function runScanner() {
+  if (!scannerActive || !storageReady || isJobDetailPage()) return;
+  if (scannerTimer) clearTimeout(scannerTimer);
+
+  const currentUrl = window.location.href;
+  if (currentUrl === lastScannedUrl && scannerPagesScanned > 0) {
+    // We already scanned this exact page (likely page load hasn't finished navigating yet)
+    scannerTimer = setTimeout(runScanner, 2000);
+    return;
+  }
+
+  // Give filters and content a moment to settle
+  scannerTimer = setTimeout(() => {
+    scannerTimer = null;
+    if (!scannerActive) return;
+
+    const cards = document.querySelectorAll(CARD_SELECTOR);
+
+    // If no cards found, maybe they are still loading? 
+    // Naukri uses skeleton loaders. Let's check for them or wait.
+    if (cards.length === 0) {
+      if (scannerRetries < 5) {
+        scannerRetries++;
+        showToast(`⏳ Page empty? Retrying... (${scannerRetries}/5)`, "warning", 1000);
+        scannerTimer = setTimeout(runScanner, 3000);
+        return;
+      } else {
+        showToast("⚠️ No jobs found on this page. Stopping scanner.", "error", 5000);
+        scannerActive = false;
+        safeStorage.set({ scannerActive: false });
+        return;
+      }
+    }
+
+    scannerRetries = 0;
+    lastScannedUrl = currentUrl;
+    const currentMatches = [];
+
+    cards.forEach(card => {
+      if (shouldShow(card)) {
+        const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+        const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+
+        const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "Unknown";
+        const company = companyEl ? companyEl.innerText.trim() : "Unknown";
+        const url = titleEl ? titleEl.href : "";
+        const location = getCardLocation(card);
+        const exp = getCardMinExp(card);
+        const key = makeKey(company, title);
+
+        if (key && key !== "||" && !scannerMatches[key]) {
+          const match = {
+            title,
+            company,
+            url,
+            location,
+            exp: exp !== null ? `${exp} Yrs` : "Not disclosed",
+            scrapedAt: new Date().toISOString()
+          };
+          scannerMatches[key] = match;
+          currentMatches.push(match);
+        }
+      }
+    });
+
+    scannerPagesScanned++;
+    scannerTotalMatches = Object.keys(scannerMatches).length;
+
+    // Safe merge with storage to prevent accidental resets
+    chrome.storage.local.get(["scannedMatches", "scannerStats"], (res) => {
+      const globalMatches = res.scannedMatches || {};
+      const globalStats = res.scannerStats || { pages: 0, matches: 0 };
+
+      // Ensure we haven't 'lost' our memory state compared to storage
+      const mergedMatches = { ...globalMatches, ...scannerMatches };
+
+      // Update variables to reflect true state
+      scannerMatches = mergedMatches;
+      scannerTotalMatches = Object.keys(mergedMatches).length;
+
+      // If our current page count is suspiciously low (like 1), but storage had more,
+      // something probably reset our memory. We should trust storage's page count if it was higher.
+      const finalPages = Math.max(scannerPagesScanned, globalStats.pages);
+      scannerPagesScanned = finalPages;
+
+      safeStorage.set({
+        scannedMatches: mergedMatches,
+        scannerStats: { pages: finalPages, matches: scannerTotalMatches }
+      }, () => {
+        safeMsg({
+          action: "scannerProgress",
+          pages: finalPages,
+          matches: scannerTotalMatches,
+          newMatches: currentMatches.length
+        });
+
+        const nextBtn = findNextPageButton();
+        if (nextBtn) {
+          showToast(`🔍 Scanned page <b>${finalPages}</b>. Found <b>${currentMatches.length}</b> new matches.<br>Moving to next page...`, "success", 1500);
+          setTimeout(() => {
+            if (scannerActive) {
+              try { nextBtn.click(); } catch (e) { if (nextBtn.href) window.location.href = nextBtn.href; }
+            }
+          }, 2000);
+        } else {
+          scannerActive = false;
+          safeStorage.set({ scannerActive: false });
+          showToast(`🏁 <b>Scan Complete!</b> Scanned <b>${finalPages}</b> pages and found <b>${scannerTotalMatches}</b> matching jobs.`, "success", 8000);
+          safeMsg({ action: "scannerComplete", pages: finalPages, matches: scannerTotalMatches });
+        }
+      });
+    });
+  }, 3500);
+}
+
 // ── Storage bootstrap ─────────────────────────────────────────────────────────
 
 function loadFromStorage(callback) {
-  safeStorage.get(["appliedJobs", "ignoredJobs", "expFilter", "kwFilter", "locFilter", "autoSkip"], (result) => {
+  safeStorage.get(["appliedJobs", "ignoredJobs", "expFilter", "kwFilter", "kwExcludeFilter", "locFilter", "autoSkip"], (result) => {
     appliedJobsCache = result.appliedJobs || {};
     ignoredJobsCache = result.ignoredJobs || {};
 
@@ -555,6 +761,10 @@ function loadFromStorage(callback) {
     const kf = result.kwFilter || { enabled: false, keywords: [] };
     kwFilterEnabled = kf.enabled;
     kwFilterKeywords = kf.keywords || [];
+
+    const kxf = result.kwExcludeFilter || { enabled: false, keywords: [] };
+    kwExcludeEnabled = kxf.enabled;
+    kwExcludeKeywords = kxf.keywords || [];
 
     const lf = result.locFilter || { enabled: false, cities: [] };
     locFilterEnabled = lf.enabled;
@@ -568,24 +778,6 @@ function loadFromStorage(callback) {
   });
 }
 
-// ── Auto-Skip helpers ─────────────────────────────────────────────────────────
-
-// ── Page type detection ───────────────────────────────────────────────────────
-
-function isJobDetailPage() {
-  // Job detail URLs: /job-listings-*, /jobdetail*, or contain sid= parameter with no pagination
-  const url = window.location.href;
-  return /naukri\.com\/job-listings-/.test(url) ||
-         /naukri\.com\/jobdetail/.test(url) ||
-         (/sid=/.test(url) && !/[?&]k=/.test(url));
-}
-
-function isSearchResultsPage() {
-  const url = window.location.href;
-  // Search results have ?k= or path like /cyber-jobs-12
-  return /[?&]k=/.test(url) || /naukri\.com\/[a-z-]+-jobs/.test(url);
-}
-
 function countVisibleCards() {
   let count = 0;
   document.querySelectorAll(CARD_SELECTOR).forEach(card => {
@@ -593,93 +785,91 @@ function countVisibleCards() {
   });
   return count;
 }
-
-function findNextPageButton() {
-  // 1. Try aria-label first (most reliable)
-  const ariaNext = document.querySelector('a[aria-label="Next"], button[aria-label="Next"]');
-  if (ariaNext) return ariaNext;
-
-  // 2. Try class-based selectors Naukri uses
-  const classNext = document.querySelector(
-    'a.next, .next > a, [class*="nextBtn"], [class*="next-btn"], [class*="next_btn"], a[title="Next"]'
-  );
-  if (classNext) return classNext;
-
-  // 3. Scan pagination wrapper for an element whose text *contains* "next"
-  const pagWrapper = document.querySelector(
-    '.pagination-wrapper, [class*="pagination"], .pages-list, .srp-pagination, [class*="Pagination"]'
-  );
-  if (pagWrapper) {
-    const links = pagWrapper.querySelectorAll("a, button, span");
-    for (const el of links) {
-      const txt = (el.innerText || el.textContent || "").toLowerCase().trim();
-      if (txt.includes("next")) return el;
-    }
-  }
-
-  // 4. Last resort: any anchor/button on the page whose text contains "next"
-  for (const el of document.querySelectorAll("a, button")) {
-    const txt = (el.innerText || el.textContent || "").toLowerCase().trim();
-    if (txt.includes("next") && !txt.includes("previous") && txt.length < 12) return el;
-  }
-
-  return null;
-}
-
 function checkAutoSkip() {
-  // Never auto-skip on a job detail page — no cards exist there
   if (!autoSkipEnabled || !storageReady || isJobDetailPage()) return;
-  if (autoSkipTimer) clearTimeout(autoSkipTimer);
+
+  if (autoSkipTimer) return;
 
   autoSkipTimer = setTimeout(() => {
     autoSkipTimer = null;
-    const visible = countVisibleCards();
+    if (!autoSkipEnabled) return;
 
-    if (visible === 0) {
-      // All jobs filtered out on this page — try to go to next
-      const nextBtn = findNextPageButton();
-      if (!nextBtn) {
-        // No next page — end of results
-        safeStorage.get(["autoSkipCount"], (r) => {
-          const n = r.autoSkipCount || 0;
-          safeStorage.set({ autoSkipCount: 0 });
-          showToast(
-            `🔍 Reached the last page. No matching jobs found${n > 0 ? ` after skipping <b>${n}</b> page${n !== 1 ? "s" : ""}` : ""}.`,
-            "error", 7000
-          );
-        });
+    const visible = countVisibleCards();
+    const allCards = document.querySelectorAll(CARD_SELECTOR);
+    const isLoading = !!document.querySelector('.srp-loader, .skeleton, .styles_skeleton, [class*="skeleton"], [class*="loading"]');
+
+    console.log(`[NaukriLinkedIn] ⏭ Auto-Skip check: visible=${visible}, total=${allCards.length}, loading=${isLoading}`);
+
+    if (visible === 0 && allCards.length > 0) {
+      // Logic fix: Skipping because filters hid everything
+      if (isLoading) {
+        console.log("[NaukriLinkedIn] ⏳ Page still loading cards, waiting...");
         return;
       }
-      // Increment skip count and navigate
+
+      const nextBtn = findNextPageButton();
+      if (!nextBtn) {
+        console.log("[NaukriLinkedIn] 🏁 No Next button found — reached end or pagination not ready.");
+        return;
+      }
+
+      console.log("[NaukriLinkedIn] ⏭ Every job is filtered out. Triggering Auto-Skip...");
+
       safeStorage.get(["autoSkipCount"], (r) => {
         const newCount = (r.autoSkipCount || 0) + 1;
         safeStorage.set({ autoSkipCount: newCount }, () => {
-          showToast(
-            `⏭ Page has <b>0 matching jobs</b> — auto-skipping... (<b>${newCount}</b> page${newCount !== 1 ? "s" : ""} skipped)`,
-            "warning", 1800
-          );
-          setTimeout(() => nextBtn.click(), 800);
+          showToast(`⏭ Auto-skipping filtered page (${newCount} skipped)`, "warning", 2500);
+          setTimeout(() => {
+            try {
+              console.log("[NaukriLinkedIn] 🚀 Clicking Next button:", nextBtn);
+              if (typeof nextBtn.click === 'function') nextBtn.click();
+              else if (nextBtn.href) window.location.href = nextBtn.href;
+            } catch (e) {
+              if (nextBtn.href) window.location.href = nextBtn.href;
+            }
+          }, 1000);
         });
       });
-    } else {
-      // Found matching jobs — check if we skipped any pages
+    } else if (allCards.length === 0) {
+      // Natural empty page
+      if (isLoading) return;
+      const nextBtn = findNextPageButton();
+      if (!nextBtn) return;
+
+      console.log("[NaukriLinkedIn] ⏭ Page is naturally empty. Auto-skipping...");
       safeStorage.get(["autoSkipCount"], (r) => {
-        const n = r.autoSkipCount || 0;
-        if (n > 0) {
-          safeStorage.set({ autoSkipCount: 0 });
-          showToast(
-            `✅ Found <b>${visible}</b> matching job${visible !== 1 ? "s" : ""}!<br><span style="font-weight:400;font-size:12px">Auto-skipped <b>${n}</b> empty page${n !== 1 ? "s" : ""} to get here.</span>`,
-            "success", 6000
-          );
-          // Notify sidepanel to update skip count display
-          safeMsg({ action: "autoSkipResult", skipped: n, found: visible });
-        }
+        const newCount = (r.autoSkipCount || 0) + 1;
+        safeStorage.set({ autoSkipCount: newCount }, () => {
+          showToast(`⏭ Auto-skipping empty page (${newCount} skipped)`, "warning", 2000);
+          setTimeout(() => { try { nextBtn.click(); } catch (e) { if (nextBtn.href) window.location.href = nextBtn.href; } }, 1000);
+        });
       });
     }
-  }, 2000); // Wait for all filters to settle before deciding
+  }, 3000);
 }
 
+// ── SPA Navigation Observer ──────────────────────────────────────────────────
+
+let lastKnownUrl = window.location.href;
+function checkUrlChange() {
+  const currentUrl = window.location.href;
+  if (currentUrl !== lastKnownUrl) {
+    console.log("[NaukriLinkedIn] 📍 URL Change detected (SPA):", currentUrl);
+    lastKnownUrl = currentUrl;
+    runAllFilters();
+    injectHideButtons();
+    chrome.storage.local.get(["scannerActive"], (r) => {
+      // Just check Auto-Skip on SPA change
+      checkAutoSkip();
+    });
+  }
+}
+window.addEventListener('popstate', checkUrlChange);
+window.addEventListener('hashchange', checkUrlChange);
+setInterval(checkUrlChange, 1500);
+
 loadFromStorage(() => {
+  lastKnownUrl = window.location.href;
   fullReset();
   runAllFilters();
   injectHideButtons();
@@ -690,62 +880,25 @@ loadFromStorage(() => {
 if (ctxOk()) {
   chrome.storage.onChanged.addListener((changes) => {
     if (!ctxOk()) return;
-    if (changes.appliedJobs) {
-      appliedJobsCache = changes.appliedJobs.newValue || {};
-      fullReset(); runAllFilters(); injectHideButtons(); injectDetailPageButton(); checkAutoSkip();
-    }
-    if (changes.ignoredJobs) {
-      ignoredJobsCache = changes.ignoredJobs.newValue || {};
-      fullReset(); runAllFilters(); injectHideButtons(); injectDetailPageButton(); checkAutoSkip();
-    }
+    if (changes.appliedJobs) { appliedJobsCache = changes.appliedJobs.newValue || {}; fullReset(); runAllFilters(); }
+    if (changes.ignoredJobs) { ignoredJobsCache = changes.ignoredJobs.newValue || {}; fullReset(); runAllFilters(); }
   });
 }
 
-// ── MutationObserver (debounced) ──────────────────────────────────────────────
-
-let _obsTimer = null;
-const observer = new MutationObserver(() => {
+const observer = new MutationObserver((mutations) => {
   if (!storageReady) return;
-  if (_obsTimer) return;
-  _obsTimer = setTimeout(() => {
-    _obsTimer = null;
-    runAllFilters();
-    injectHideButtons();
-    injectDetailPageButton();
-    checkAutoSkip();
-  }, 350);
+
+  // Check if any added nodes are job cards to trigger filter run
+  const hasNewCards = mutations.some(m =>
+    Array.from(m.addedNodes).some(node => node.nodeType === 1 && (node.matches?.(CARD_SELECTOR) || node.querySelector?.(CARD_SELECTOR)))
+  );
+
+  if (hasNewCards) runAllFilters();
+
+  injectHideButtons();
+  checkAutoSkip();
 });
 observer.observe(document.body, { childList: true, subtree: true });
-
-// ── Job Details extractors ────────────────────────────────────────────────────
-
-function extractCompanyName() {
-  const selectors = [
-    'div[class*="styles_jd-header-comp-name"] a', '[class*="jd-header-comp-name"] a',
-    'a[href*="-jobs-careers-"]', 'a[title*="Careers"]',
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) {
-      const name = el.innerText?.trim() || el.getAttribute("title")?.replace(" Careers", "").trim();
-      if (name) return name;
-    }
-  }
-  return null;
-}
-
-function extractJobPosition() {
-  const selectors = [
-    'h1[class*="jd-header-title"]', '[class*="jd-header-title"] h1',
-    '[class*="jd-header-title"]', 'h1',
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) { const text = el.innerText?.trim(); if (text) return text; }
-  }
-  return null;
-}
-
 // ── Main action ───────────────────────────────────────────────────────────────
 
 function openLinkedIn() {
@@ -769,144 +922,166 @@ document.addEventListener("keydown", (e) => {
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 if (ctxOk()) {
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!ctxOk()) return;
-  if (message.action === "getCompany") {
-    sendResponse({ company: extractCompanyName(), position: extractJobPosition() });
-  }
-  if (message.action === "triggerSearch") { openLinkedIn(); }
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!ctxOk()) return;
+    if (message.action === "getCompany") {
+      sendResponse({ company: extractCompanyName(), position: extractJobPosition() });
+    }
+    if (message.action === "triggerSearch") { openLinkedIn(); }
 
-  // Side panel requests list of hidden jobs
-  if (message.action === "getHiddenJobs") {
-    const hiddenJobs = [];
-    document.querySelectorAll(CARD_SELECTOR).forEach(card => {
-      if (card.style.display !== "none") return;
+    // Side panel requests list of hidden jobs
+    if (message.action === "getHiddenJobs") {
+      const hiddenJobs = [];
+      document.querySelectorAll(CARD_SELECTOR).forEach(card => {
+        if (card.style.display !== "none") return;
 
-      const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
-      const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
-      const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "Unknown";
-      const company = companyEl ? companyEl.innerText.trim() : "Unknown";
+        const titleEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+        const companyEl = card.querySelector('.comp-name, .subTitle, a[title*="Careers"]');
+        const title = titleEl ? (titleEl.innerText || titleEl.getAttribute("title") || "").trim() : "Unknown";
+        const company = companyEl ? companyEl.innerText.trim() : "Unknown";
 
-      const reasons = [];
-      if (isHistoryHidden(card)) reasons.push("Applied");
-      if (isIgnored(card)) reasons.push("Ignored");
-      if (card.dataset.nliExpHidden === "true") reasons.push("Experience");
-      if (card.dataset.nliKwHidden === "true") reasons.push("Keywords");
-      if (card.dataset.nliLocHidden === "true") reasons.push("Location");
+        const reasons = [];
+        if (isHistoryHidden(card)) reasons.push("Applied");
+        if (isIgnored(card)) reasons.push("Ignored");
+        if (card.dataset.nliExpHidden === "true") reasons.push("Experience");
+        if (card.dataset.nliKwHidden === "true") reasons.push("Keywords");
+        if (card.dataset.nliLocHidden === "true") reasons.push("Location");
 
-      const exp = getCardMinExp(card);
-      const loc = getCardLocation(card);
+        const exp = getCardMinExp(card);
+        const loc = getCardLocation(card);
 
-      // Get the job detail URL from the title link
-      const linkEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
-      const url = linkEl ? linkEl.href : null;
+        // Get the job detail URL from the title link
+        const linkEl = card.querySelector('a.title, .title a, [class*="title"] a, a[title], .row1 a, .row2 a');
+        const url = linkEl ? linkEl.href : null;
 
-      hiddenJobs.push({
-        title,
-        company,
-        reasons,
-        exp: exp !== null ? exp + " yrs" : null,
-        location: loc || null,
-        url,
+        hiddenJobs.push({
+          title,
+          company,
+          reasons,
+          exp: exp !== null ? exp + " yrs" : null,
+          location: loc || null,
+          url,
+        });
       });
-    });
-    sendResponse({ hiddenJobs });
-    return true;
-  }
+      sendResponse({ hiddenJobs });
+      return true;
+    }
 
-  // Exp filter changed from side panel
-  if (message.action === "expFilterChanged") {
-    expFilterEnabled = message.enabled;
-    expFilterMax = message.maxAllowed;
-    document.querySelectorAll('[data-nli-exp-checked]').forEach(el => {
-      delete el.dataset.nliExpChecked; delete el.dataset.nliExpHidden;
-      syncDisplay(el);
-    });
-    applyExpFilter();
-    checkAutoSkip();
-  }
-
-  // Keyword filter changed
-  if (message.action === "kwFilterChanged") {
-    kwFilterEnabled = message.enabled;
-    kwFilterKeywords = message.keywords || [];
-    document.querySelectorAll('[data-nli-kw-checked]').forEach(el => {
-      delete el.dataset.nliKwChecked; delete el.dataset.nliKwHidden;
-      syncDisplay(el);
-    });
-    applyKeywordFilter();
-    checkAutoSkip();
-  }
-
-  // Location filter changed
-  if (message.action === "locFilterChanged") {
-    locFilterEnabled = message.enabled;
-    locFilterCities = message.cities || [];
-    document.querySelectorAll('[data-nli-loc-checked]').forEach(el => {
-      delete el.dataset.nliLocChecked; delete el.dataset.nliLocHidden;
-      syncDisplay(el);
-    });
-    applyLocationFilter();
-    checkAutoSkip();
-  }
-
-  // Auto-skip changed
-  if (message.action === "autoSkipChanged") {
-    autoSkipEnabled = message.enabled;
-    if (!autoSkipEnabled) {
-      safeStorage.set({ autoSkipCount: 0 });
-      if (autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
-    } else {
+    // Exp filter changed from side panel
+    if (message.action === "expFilterChanged") {
+      expFilterEnabled = message.enabled;
+      expFilterMax = message.maxAllowed;
+      document.querySelectorAll('[data-nli-exp-checked]').forEach(el => {
+        delete el.dataset.nliExpChecked; delete el.dataset.nliExpHidden;
+        syncDisplay(el);
+      });
+      applyExpFilter();
       checkAutoSkip();
     }
-  }
 
-  // Sidepanel requests full ignored jobs list (from storage, not just current page)
-  if (message.action === "getIgnoredList") {
-    safeStorage.get(["ignoredJobs"], (r) => {
-      const cache = r.ignoredJobs || {};
-      const list = Object.entries(cache).map(([key, val]) => ({
-        key,
-        company: val.company || "",
-        title: val.title || "",
-        hiddenAt: val.hiddenAt || null,
-      }));
-      list.sort((a, b) => (b.hiddenAt || "").localeCompare(a.hiddenAt || ""));
-      sendResponse({ list });
-    });
-    return true;
-  }
+    // Keyword filter changed
+    if (message.action === "kwFilterChanged") {
+      kwFilterEnabled = message.enabled;
+      kwFilterKeywords = message.keywords || [];
+      document.querySelectorAll('[data-nli-kw-checked]').forEach(el => {
+        delete el.dataset.nliKwChecked; delete el.dataset.nliKwHidden;
+        syncDisplay(el);
+      });
+      applyKeywordFilter();
+      checkAutoSkip();
+    }
 
-  // Restore a single ignored job
-  if (message.action === "restoreIgnored") {
-    safeStorage.get(["ignoredJobs"], (r) => {
-      const cache = r.ignoredJobs || {};
-      delete cache[message.key];
-      ignoredJobsCache = cache;
-      safeStorage.set({ ignoredJobs: cache }, () => {
-        // Show any matching card on current page
-        document.querySelectorAll(CARD_SELECTOR).forEach(card => {
-          if (getCardKey(card) === message.key) {
-            delete card.dataset.nliChecked;
-            syncDisplay(card);
-          }
+    // Keyword exclude filter changed
+    if (message.action === "kwExcludeFilterChanged") {
+      kwExcludeEnabled = message.enabled;
+      kwExcludeKeywords = message.keywords || [];
+      document.querySelectorAll('[data-nli-kw-checked]').forEach(el => {
+        delete el.dataset.nliKwChecked; delete el.dataset.nliKwHidden;
+        syncDisplay(el);
+      });
+      applyKeywordFilter();
+      checkAutoSkip();
+      if (scannerActive) runScanner();
+    }
+
+    // Location filter changed
+    if (message.action === "locFilterChanged") {
+      locFilterEnabled = message.enabled;
+      locFilterCities = message.cities || [];
+      document.querySelectorAll('[data-nli-loc-checked]').forEach(el => {
+        delete el.dataset.nliLocChecked; delete el.dataset.nliLocHidden;
+        syncDisplay(el);
+      });
+      applyLocationFilter();
+      checkAutoSkip();
+      if (scannerActive) runScanner();
+    }
+
+    if (message.action === "clearScannedMatches") {
+      // logic removed
+    }
+
+    // Auto-skip logic
+    if (message.action === "autoSkipChanged") {
+      autoSkipEnabled = message.enabled;
+      if (!autoSkipEnabled) {
+        safeStorage.set({ autoSkipCount: 0 });
+        if (autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
+      } else {
+        checkAutoSkip();
+      }
+    }
+    if (message.action === "resetAutoSkip") {
+      if (autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
+      checkAutoSkip();
+    }
+
+    // Sidepanel requests full ignored jobs list (from storage, not just current page)
+    if (message.action === "getIgnoredList") {
+      safeStorage.get(["ignoredJobs"], (r) => {
+        const cache = r.ignoredJobs || {};
+        const list = Object.entries(cache).map(([key, val]) => ({
+          key,
+          company: val.company || "",
+          title: val.title || "",
+          hiddenAt: val.hiddenAt || null,
+        }));
+        list.sort((a, b) => (b.hiddenAt || "").localeCompare(a.hiddenAt || ""));
+        sendResponse({ list });
+      });
+      return true;
+    }
+
+    // Restore a single ignored job
+    if (message.action === "restoreIgnored") {
+      safeStorage.get(["ignoredJobs"], (r) => {
+        const cache = r.ignoredJobs || {};
+        delete cache[message.key];
+        ignoredJobsCache = cache;
+        safeStorage.set({ ignoredJobs: cache }, () => {
+          // Show any matching card on current page
+          document.querySelectorAll(CARD_SELECTOR).forEach(card => {
+            if (getCardKey(card) === message.key) {
+              delete card.dataset.nliChecked;
+              syncDisplay(card);
+            }
+          });
+          sendResponse({ ok: true });
         });
+      });
+      return true;
+    }
+
+    // Clear all ignored jobs
+    if (message.action === "clearIgnored") {
+      ignoredJobsCache = {};
+      safeStorage.set({ ignoredJobs: {} }, () => {
+        fullReset();
+        runAllFilters();
+        injectHideButtons();
         sendResponse({ ok: true });
       });
-    });
-    return true;
-  }
-
-  // Clear all ignored jobs
-  if (message.action === "clearIgnored") {
-    ignoredJobsCache = {};
-    safeStorage.set({ ignoredJobs: {} }, () => {
-      fullReset();
-      runAllFilters();
-      injectHideButtons();
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-});
+      return true;
+    }
+  });
 } // end if(ctxOk())
