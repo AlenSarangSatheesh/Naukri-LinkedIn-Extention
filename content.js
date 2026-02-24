@@ -785,11 +785,13 @@ function countVisibleCards() {
   });
   return count;
 }
+
 function checkAutoSkip() {
   if (!autoSkipEnabled || !storageReady || isJobDetailPage()) return;
 
   if (autoSkipTimer) return;
 
+  // Reduced delay from 3000ms to 800ms
   autoSkipTimer = setTimeout(() => {
     autoSkipTimer = null;
     if (!autoSkipEnabled) return;
@@ -801,7 +803,6 @@ function checkAutoSkip() {
     console.log(`[NaukriLinkedIn] ⏭ Auto-Skip check: visible=${visible}, total=${allCards.length}, loading=${isLoading}`);
 
     if (visible === 0 && allCards.length > 0) {
-      // Logic fix: Skipping because filters hid everything
       if (isLoading) {
         console.log("[NaukriLinkedIn] ⏳ Page still loading cards, waiting...");
         return;
@@ -818,7 +819,8 @@ function checkAutoSkip() {
       safeStorage.get(["autoSkipCount"], (r) => {
         const newCount = (r.autoSkipCount || 0) + 1;
         safeStorage.set({ autoSkipCount: newCount }, () => {
-          showToast(`⏭ Auto-skipping filtered page (${newCount} skipped)`, "warning", 2500);
+          showToast(`⏭ Auto-skipping filtered page (${newCount} skipped)`, "warning", 1500);
+          // Reduced delay before clicking next from 1000ms to 150ms
           setTimeout(() => {
             try {
               console.log("[NaukriLinkedIn] 🚀 Clicking Next button:", nextBtn);
@@ -827,7 +829,7 @@ function checkAutoSkip() {
             } catch (e) {
               if (nextBtn.href) window.location.href = nextBtn.href;
             }
-          }, 1000);
+          }, 150);
         });
       });
     } else if (allCards.length === 0) {
@@ -840,12 +842,13 @@ function checkAutoSkip() {
       safeStorage.get(["autoSkipCount"], (r) => {
         const newCount = (r.autoSkipCount || 0) + 1;
         safeStorage.set({ autoSkipCount: newCount }, () => {
-          showToast(`⏭ Auto-skipping empty page (${newCount} skipped)`, "warning", 2000);
-          setTimeout(() => { try { nextBtn.click(); } catch (e) { if (nextBtn.href) window.location.href = nextBtn.href; } }, 1000);
+          showToast(`⏭ Auto-skipping empty page (${newCount} skipped)`, "warning", 1500);
+          // Reduced delay before clicking next from 1000ms to 150ms
+          setTimeout(() => { try { nextBtn.click(); } catch (e) { if (nextBtn.href) window.location.href = nextBtn.href; } }, 150);
         });
       });
     }
-  }, 3000);
+  }, 800);
 }
 
 // ── SPA Navigation Observer ──────────────────────────────────────────────────
